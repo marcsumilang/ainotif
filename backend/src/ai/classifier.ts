@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 
 export const ClassificationResultSchema = z.object({
   classification: z.enum(["TRANSACTION", "SCAM_PHISHING", "IRRELEVANT"]),
@@ -20,15 +20,67 @@ export const ClassificationResultSchema = z.object({
 
 export type ClassificationResult = z.infer<typeof ClassificationResultSchema>;
 
-const geminiApiKey = process.env.GEMINI_API_KEY;
-let genAi: GoogleGenAI | null = null;
+const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+let openRouterClient: OpenAI | null = null;
 
-if (geminiApiKey) {
+if (openRouterApiKey) {
   try {
-    genAi = new GoogleGenAI({ apiKey: geminiApiKey });
+    openRouterClient = new OpenAI({
+      baseURL: process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
+      apiKey: openRouterApiKey,
+      defaultHeaders: {
+        "HTTP-Referer": process.env.OPENROUTER_SITE_URL || "https://github.com/marcsumilang/ainotif",
+        "X-Title": process.env.OPENROUTER_SITE_NAME || "AiNotif",
+      },
+    });
   } catch (err) {
-    console.warn("Failed to initialize GoogleGenAI client:", err);
+    console.warn("Failed to initialize OpenRouter client:", err);
   }
+}
+
+/**
+ * Robustly parses and extracts JSON from model responses, handling potential markdown fences
+ * or leading/trailing commentary common in free open-source models.
+ */
+export function extractJsonPayload(content: string): unknown {
+  let clean = content.trim();
+
+  // 1. Direct JSON parse
+  try {
+    return JSON.parse(clean);
+  } catch {
+    // Continue
+  }
+
+  // 2. Extract from markdown code fence (```json ... ``` or ``` ... ```) anywhere in content
+  const markdownMatch = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (markdownMatch && markdownMatch[1]) {
+    try {
+      return JSON.parse(markdownMatch[1].trim());
+    } catch {
+      clean = markdownMatch[1].trim();
+    }
+  }
+
+  // 3. Find outermost JSON object bounds { ... }
+  const start = clean.indexOf("{");
+  const end = clean.lastIndexOf("}");
+  if (start !== -1 && end !== -1 && end > start) {
+    const candidate = clean.slice(start, end + 1);
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // Remove trailing commas before } or ] common in open-source LLM outputs
+      const relaxed = candidate.replace(/,\s*([}\]])/g, "$1");
+      try {
+        return JSON.parse(relaxed);
+      } catch {
+        // Fall through
+      }
+    }
+  }
+
+  throw new Error("No valid JSON structure found in AI response");
 }
 
 /**
@@ -42,9 +94,10 @@ export async function classifyNotification(payload: {
 }): Promise<ClassificationResult> {
   const fullText = `${payload.title ? payload.title + " : " : ""}${payload.text}`.trim();
 
-  // If Gemini API is configured, use Gemini 2.0 Flash structured output
-  if (genAi && geminiApiKey) {
+  // If OpenRouter API is configured, use OpenRouter structured output
+  if (openRouterClient && openRouterApiKey) {
     try {
+      const model = process.env.OPENROUTER_MODEL || "openrouter/free";
       const prompt = `
 You are a cybersecurity and banking notification analyzer. Analyze the following notification from an Android phone:
 
@@ -83,22 +136,30 @@ Respond ONLY with valid JSON conforming to this schema:
 }
 `;
 
-      const response = await genAi.models.generateContent({
-        model: "gemini-2.0-flash",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-        },
+      const completion = await openRouterClient.chat.completions.create({
+        model,
+        messages: [
+          {
+            role: "system",
+            content: "You are a cybersecurity and banking notification analyzer. Analyze notifications and respond ONLY with valid JSON conforming strictly to the requested schema.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.1,
       });
 
-      const rawJson = response.text?.trim();
+      const rawJson = completion.choices[0]?.message?.content;
       if (rawJson) {
-        const parsed = JSON.parse(rawJson);
+        const parsed = extractJsonPayload(rawJson);
         const validated = ClassificationResultSchema.parse(parsed);
         return validated;
       }
     } catch (err) {
-      console.warn("Gemini AI API classification failed, falling back to heuristic engine:", err);
+      console.warn("OpenRouter AI API classification failed, falling back to heuristic engine:", err);
     }
   }
 

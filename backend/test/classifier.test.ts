@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { fallbackHeuristicClassifier, ClassificationResultSchema } from "../src/ai/classifier.js";
+import { fallbackHeuristicClassifier, ClassificationResultSchema, extractJsonPayload } from "../src/ai/classifier.js";
 
 async function runTests() {
   console.log("--- AiNotif AI Classifier Test Suite ---");
@@ -61,6 +61,53 @@ async function runTests() {
     assert.strictEqual(res.transaction, null);
     assert.ok(ClassificationResultSchema.safeParse(res).success);
     console.log("Test 4 Passed: Irrelevant chat message bypassed.");
+  }
+
+  // Test 5: OpenRouter Markdown-wrapped JSON response extraction
+  {
+    const markdownResponse = `Here is the analysis:
+\`\`\`json
+{
+  "classification": "TRANSACTION",
+  "isScamOrPhishing": false,
+  "riskScore": 0,
+  "scamReason": null,
+  "scamIndicators": [],
+  "transaction": {
+    "amount": 19.99,
+    "currency": "USD",
+    "merchant": "Netflix",
+    "category": "Entertainment",
+    "type": "DEBIT"
+  },
+  "confidence": 0.98,
+  "explanation": "Recurring subscription payment to Netflix."
+}
+\`\`\`
+Hope this helps!`;
+
+    const extracted = extractJsonPayload(markdownResponse);
+    const parsed = ClassificationResultSchema.safeParse(extracted);
+    assert.ok(parsed.success);
+    if (parsed.success) {
+      assert.strictEqual(parsed.data.classification, "TRANSACTION");
+      assert.strictEqual(parsed.data.transaction?.merchant, "Netflix");
+      assert.strictEqual(parsed.data.transaction?.amount, 19.99);
+    }
+    console.log("Test 5 Passed: Markdown-wrapped OpenRouter JSON response parsed & validated.");
+  }
+
+  // Test 6: OpenRouter Raw JSON response extraction
+  {
+    const rawJsonResponse = `{"classification":"SCAM_PHISHING","isScamOrPhishing":true,"riskScore":95,"scamReason":"Phishing link detected","scamIndicators":["Suspicious URL"],"transaction":null,"confidence":0.99,"explanation":"Urgent lock message with deceptive link."}`;
+    const extracted = extractJsonPayload(rawJsonResponse);
+    const parsed = ClassificationResultSchema.safeParse(extracted);
+    assert.ok(parsed.success);
+    if (parsed.success) {
+      assert.strictEqual(parsed.data.classification, "SCAM_PHISHING");
+      assert.strictEqual(parsed.data.riskScore, 95);
+    }
+    console.log("Test 6 Passed: Raw JSON response parsed & validated.");
   }
 
   console.log("\nAll backend classifier tests PASSED successfully!");

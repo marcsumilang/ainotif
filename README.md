@@ -1,6 +1,6 @@
 # AiNotif 🛡️📱
 
-**AiNotif** is a modern, privacy-first Android application and typesafe AI backend service that intercepts banking, SMS, and financial notifications, instantly drops sensitive OTPs/credentials on-device, forwards financial updates to a structured AI engine (Google Gemini / Zod), detects phishing/scam attempts, categorizes expenses, and syncs data to an offline-first Room database with Clerk user authentication and Neon PostgreSQL storage.
+**AiNotif** is a modern, privacy-first Android application and typesafe AI backend service that intercepts banking, SMS, and financial notifications, instantly drops sensitive OTPs/credentials on-device, forwards financial updates to a structured AI engine (OpenRouter Free Models / Zod), detects phishing/scam attempts, categorizes expenses, and syncs data to an offline-first Room database with Clerk user authentication and Neon PostgreSQL storage.
 
 ---
 
@@ -25,7 +25,7 @@
                         │             Backend Service (TypeScript / Hono)        │
                         │                                                        │
                         │  1. Verify Clerk JWT                                   │
-                        │  2. Typesafe AI Engine (Gemini 2.0 Flash / Zod)        │
+                        │  2. Typesafe AI Engine (OpenRouter Free Models / Zod)  │
                         │     - Classifies: Transaction vs. Phishing/Scam        │
                         │     - Extracts: Amount, Currency, Merchant, Category   │
                         │  3. Drizzle ORM + Connection Pooling                   │
@@ -73,7 +73,7 @@ ainotif/
     ├── src/
     │   ├── db/                      # Neon DB connection & Drizzle ORM schema
     │   ├── auth/                    # Clerk JWT verification middleware
-    │   ├── ai/                      # Gemini structured output & fallback classifier
+    │   ├── ai/                      # OpenRouter structured output & fallback classifier
     │   ├── routes/                  # /process-notification, /transactions, /alerts, /stats
     │   └── index.ts                 # Hono server setup
     ├── test/                        # Classifier unit & API integration test suites
@@ -96,7 +96,7 @@ pnpm install
 
 # Configure environment variables
 cp .env.example .env
-# Edit .env to add your GEMINI_API_KEY, DATABASE_URL, and CLERK keys
+# Edit .env to add your OPENROUTER_API_KEY, DATABASE_URL, and CLERK keys
 # (By default, DEV_MOCK_AUTH=true allows instant testing without live keys)
 
 # Run integration tests
@@ -133,7 +133,7 @@ cd android
    - These messages are **never sent over the network** or logged to cloud servers.
 
 2. **Typesafe AI Transaction & Phishing Detection**:
-   - Google Gemini 2.0 Flash with Zod schema enforcement extracts precise transaction data (`amount`, `currency`, `merchant`, `category`, `type`).
+   - OpenRouter (Free Models such as `openrouter/free`, `google/gemma-4-31b-it:free`, `qwen/qwen3.8-27b:free`) with Zod schema enforcement extracts precise transaction data (`amount`, `currency`, `merchant`, `category`, `type`).
    - Evaluates urgency, sender legitimacy, suspicious short links, and phishing lures with automated risk scores (`0-100`).
 
 3. **In-App Notification Simulator**:

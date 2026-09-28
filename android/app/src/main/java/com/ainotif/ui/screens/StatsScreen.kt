@@ -236,7 +236,7 @@ fun StatsScreen(
                         Spacer(modifier = Modifier.height(12.dp))
 
                         Text(
-                            "AiNotif continuously analyzes incoming notifications using structured AI output (Gemini / Zod) to isolate urgent account suspension threats and deceptive links before you can click them.",
+                            "AiNotif continuously analyzes incoming notifications using structured AI output (OpenRouter / Zod) to isolate urgent account suspension threats and deceptive links before you can click them.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                         )
