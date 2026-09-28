@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.ainotif.RegexFilterTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-09-27T16:01:34" hostname="marcomarchy" time="0.04">
+  <properties/>
+  <testcase name="testForwardPhishingScamSignalsForAi" classname="com.ainotif.RegexFilterTest" time="0.036"/>
+  <testcase name="testForwardFinancialTransactions" classname="com.ainotif.RegexFilterTest" time="0.001"/>
+  <testcase name="testDropOtpMessages" classname="com.ainotif.RegexFilterTest" time="0.001"/>
+  <testcase name="testIgnoreIrrelevantMessages" classname="com.ainotif.RegexFilterTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

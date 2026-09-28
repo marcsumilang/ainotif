@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">AiNotif</string>
+    <string name="notification_listener_service_description">AiNotif intercepts transaction notifications to track expenses and detect phishing attempts.</string>
+</resources>

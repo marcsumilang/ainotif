@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.ainotif.app-mergeDebugResources-58:/values-v30/values-v30.xml",
+            "map": [
+                {
+                    "source": "/home/marc/.gradle/caches/8.11.1/transforms/6501ee8b22c16616f41a3a1b9c4c0f13/transformed/material3-release/res/values-v30/values-v30.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "72",
+                        "endOffsets": "123"
+                    }
+                }
+            ]
+        }
+    ]
+}

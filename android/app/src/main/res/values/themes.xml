@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.AiNotif" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">#00000000</item>
+        <item name="android:navigationBarColor">#00000000</item>
+    </style>
+</resources>

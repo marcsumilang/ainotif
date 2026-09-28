@@ -1,0 +1,213 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.ainotif"
+4    android:versionCode="1"
+5    android:versionName="1.0.0" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="26"
+9        android:targetSdkVersion="35" />
+10
+11    <uses-permission android:name="android.permission.INTERNET" />
+11-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:4:5-67
+11-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:4:22-64
+12    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+12-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:5:5-79
+12-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:5:22-76
+13    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+13-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:6:5-77
+13-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:6:22-74
+14
+15    <permission
+15-->[androidx.core:core:1.15.0] /home/marc/.gradle/caches/8.11.1/transforms/6cb1af78e18d39b4d98c48c2d07c7ddc/transformed/core-1.15.0/AndroidManifest.xml:22:5-24:47
+16        android:name="com.ainotif.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+16-->[androidx.core:core:1.15.0] /home/marc/.gradle/caches/8.11.1/transforms/6cb1af78e18d39b4d98c48c2d07c7ddc/transformed/core-1.15.0/AndroidManifest.xml:23:9-81
+17        android:protectionLevel="signature" />
+17-->[androidx.core:core:1.15.0] /home/marc/.gradle/caches/8.11.1/transforms/6cb1af78e18d39b4d98c48c2d07c7ddc/transformed/core-1.15.0/AndroidManifest.xml:24:9-44
+18
+19    <uses-permission android:name="com.ainotif.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+19-->[androidx.core:core:1.15.0] /home/marc/.gradle/caches/8.11.1/transforms/6cb1af78e18d39b4d98c48c2d07c7ddc/transformed/core-1.15.0/AndroidManifest.xml:26:5-97
+19-->[androidx.core:core:1.15.0] /home/marc/.gradle/caches/8.11.1/transforms/6cb1af78e18d39b4d98c48c2d07c7ddc/transformed/core-1.15.0/AndroidManifest.xml:26:22-94
+20
+21    <application
+21-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:8:5-53:19
+22        android:name="com.ainotif.AiNotifApplication"
+22-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:9:9-43
+23        android:allowBackup="true"
+23-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:10:9-35
+24        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+24-->[androidx.core:core:1.15.0] /home/marc/.gradle/caches/8.11.1/transforms/6cb1af78e18d39b4d98c48c2d07c7ddc/transformed/core-1.15.0/AndroidManifest.xml:28:18-86
+25        android:debuggable="true"
+26        android:extractNativeLibs="false"
+27        android:icon="@android:drawable/ic_dialog_info"
+27-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:11:9-56
+28        android:label="@string/app_name"
+28-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:12:9-41
+29        android:roundIcon="@android:drawable/ic_dialog_info"
+29-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:13:9-61
+30        android:supportsRtl="true"
+30-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:14:9-35
+31        android:theme="@style/Theme.AiNotif"
+31-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:15:9-45
+32        android:usesCleartextTraffic="true" >
+32-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:16:9-44
+33        <activity
+33-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:18:9-37:20
+34            android:name="com.ainotif.ui.MainActivity"
+34-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:19:13-44
+35            android:exported="true"
+35-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:20:13-36
+36            android:windowSoftInputMode="adjustResize" >
+36-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:21:13-55
+37            <intent-filter>
+37-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:22:13-25:29
+38                <action android:name="android.intent.action.MAIN" />
+38-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:23:17-69
+38-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:23:25-66
+39
+40                <category android:name="android.intent.category.LAUNCHER" />
+40-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:24:17-77
+40-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:24:27-74
+41            </intent-filter>
+42
+43            <!-- Clerk Auth Deep Link Handler -->
+44            <intent-filter>
+44-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:28:13-36:29
+45                <action android:name="android.intent.action.VIEW" />
+45-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:29:17-69
+45-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:29:25-66
+46
+47                <category android:name="android.intent.category.DEFAULT" />
+47-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:30:17-76
+47-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:30:27-73
+48                <category android:name="android.intent.category.BROWSABLE" />
+48-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:31:17-78
+48-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:31:27-75
+49
+50                <data
+50-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:32:17-35:48
+51                    android:host="oauth"
+51-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:33:21-41
+52                    android:pathPrefix="/callback"
+52-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:34:21-51
+53                    android:scheme="ainotif" />
+53-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:35:21-45
+54            </intent-filter>
+55        </activity>
+56
+57        <!-- Notification Listener Service for Banking & SMS Interception -->
+58        <service
+58-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:40:9-51:19
+59            android:name="com.ainotif.service.AiNotificationListenerService"
+59-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:41:13-66
+60            android:exported="true"
+60-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:44:13-36
+61            android:label="AiNotif Transaction Listener"
+61-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:42:13-57
+62            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" >
+62-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:43:13-87
+63            <intent-filter>
+63-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:45:13-47:29
+64                <action android:name="android.service.notification.NotificationListenerService" />
+64-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:46:17-99
+64-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:46:25-96
+65            </intent-filter>
+66
+67            <meta-data
+67-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:48:13-50:58
+68                android:name="android.service.notification.default_filter_types"
+68-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:49:17-81
+69                android:value="conversations,alerting" />
+69-->/home/marc/sites/ainotif/android/app/src/main/AndroidManifest.xml:50:17-55
+70        </service>
+71
+72        <activity
+72-->[androidx.compose.ui:ui-test-manifest:1.7.6] /home/marc/.gradle/caches/8.11.1/transforms/7fb7ef76db580e2e832ad9a341940527/transformed/ui-test-manifest-1.7.6/AndroidManifest.xml:23:9-25:39
+73            android:name="androidx.activity.ComponentActivity"
+73-->[androidx.compose.ui:ui-test-manifest:1.7.6] /home/marc/.gradle/caches/8.11.1/transforms/7fb7ef76db580e2e832ad9a341940527/transformed/ui-test-manifest-1.7.6/AndroidManifest.xml:24:13-63
+74            android:exported="true" />
+74-->[androidx.compose.ui:ui-test-manifest:1.7.6] /home/marc/.gradle/caches/8.11.1/transforms/7fb7ef76db580e2e832ad9a341940527/transformed/ui-test-manifest-1.7.6/AndroidManifest.xml:25:13-36
+75        <activity
+75-->[androidx.compose.ui:ui-tooling-android:1.7.6] /home/marc/.gradle/caches/8.11.1/transforms/2cac5f1b714ef2857f1a81dae2b1f2a3/transformed/ui-tooling-release/AndroidManifest.xml:23:9-25:39
+76            android:name="androidx.compose.ui.tooling.PreviewActivity"
+76-->[androidx.compose.ui:ui-tooling-android:1.7.6] /home/marc/.gradle/caches/8.11.1/transforms/2cac5f1b714ef2857f1a81dae2b1f2a3/transformed/ui-tooling-release/AndroidManifest.xml:24:13-71
+77            android:exported="true" />
+77-->[androidx.compose.ui:ui-tooling-android:1.7.6] /home/marc/.gradle/caches/8.11.1/transforms/2cac5f1b714ef2857f1a81dae2b1f2a3/transformed/ui-tooling-release/AndroidManifest.xml:25:13-36
+78
+79        <provider
+79-->[androidx.emoji2:emoji2:1.3.0] /home/marc/.gradle/caches/8.11.1/transforms/e56564351acbf60d18171904cd7df420/transformed/emoji2-1.3.0/AndroidManifest.xml:24:9-32:20
+80            android:name="androidx.startup.InitializationProvider"
+80-->[androidx.emoji2:emoji2:1.3.0] /home/marc/.gradle/caches/8.11.1/transforms/e56564351acbf60d18171904cd7df420/transformed/emoji2-1.3.0/AndroidManifest.xml:25:13-67
+81            android:authorities="com.ainotif.androidx-startup"
+81-->[androidx.emoji2:emoji2:1.3.0] /home/marc/.gradle/caches/8.11.1/transforms/e56564351acbf60d18171904cd7df420/transformed/emoji2-1.3.0/AndroidManifest.xml:26:13-68
+82            android:exported="false" >
+82-->[androidx.emoji2:emoji2:1.3.0] /home/marc/.gradle/caches/8.11.1/transforms/e56564351acbf60d18171904cd7df420/transformed/emoji2-1.3.0/AndroidManifest.xml:27:13-37
+83            <meta-data
+83-->[androidx.emoji2:emoji2:1.3.0] /home/marc/.gradle/caches/8.11.1/transforms/e56564351acbf60d18171904cd7df420/transformed/emoji2-1.3.0/AndroidManifest.xml:29:13-31:52
+84                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+84-->[androidx.emoji2:emoji2:1.3.0] /home/marc/.gradle/caches/8.11.1/transforms/e56564351acbf60d18171904cd7df420/transformed/emoji2-1.3.0/AndroidManifest.xml:30:17-75
+85                android:value="androidx.startup" />
+85-->[androidx.emoji2:emoji2:1.3.0] /home/marc/.gradle/caches/8.11.1/transforms/e56564351acbf60d18171904cd7df420/transformed/emoji2-1.3.0/AndroidManifest.xml:31:17-49
+86            <meta-data
+86-->[androidx.lifecycle:lifecycle-process:2.8.7] /home/marc/.gradle/caches/8.11.1/transforms/42a644e0650d2a439e372caa48d681f4/transformed/lifecycle-process-2.8.7/AndroidManifest.xml:29:13-31:52
+87                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+87-->[androidx.lifecycle:lifecycle-process:2.8.7] /home/marc/.gradle/caches/8.11.1/transforms/42a644e0650d2a439e372caa48d681f4/transformed/lifecycle-process-2.8.7/AndroidManifest.xml:30:17-78
+88                android:value="androidx.startup" />
+88-->[androidx.lifecycle:lifecycle-process:2.8.7] /home/marc/.gradle/caches/8.11.1/transforms/42a644e0650d2a439e372caa48d681f4/transformed/lifecycle-process-2.8.7/AndroidManifest.xml:31:17-49
+89            <meta-data
+89-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/marc/.gradle/caches/8.11.1/transforms/02a5caa58d3d944333ece092c4a0315d/transformed/profileinstaller-1.3.1/AndroidManifest.xml:29:13-31:52
+90                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+90-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/marc/.gradle/caches/8.11.1/transforms/02a5caa58d3d944333ece092c4a0315d/transformed/profileinstaller-1.3.1/AndroidManifest.xml:30:17-85
+91                android:value="androidx.startup" />
+91-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/marc/.gradle/caches/8.11.1/transforms/02a5caa58d3d944333ece092c4a0315d/transformed/profileinstaller-1.3.1/AndroidManifest.xml:31:17-49
+92        </provider>
+93
+94        <service
+94-->[androidx.room:room-runtime:2.6.1] /home/marc/.gradle/caches/8.11.1/transforms/84a91ec7bafcc30200715e7b207bf431/transformed/room-runtime-2.6.1/AndroidManifest.xml:24:9-28:63
+95            android:name="androidx.room.MultiInstanceInvalidationService"
+95-->[androidx.room:room-runtime:2.6.1] /home/marc/.gradle/caches/8.11.1/transforms/84a91ec7bafcc30200715e7b207bf431/transformed/room-runtime-2.6.1/AndroidManifest.xml:25:13-74
+96            android:directBootAware="true"
+96-->[androidx.room:room-runtime:2.6.1] /home/marc/.gradle/caches/8.11.1/transforms/84a91ec7bafcc30200715e7b207bf431/transformed/room-runtime-2.6.1/AndroidManifest.xml:26:13-43
+97            android:exported="false" />
+97-->[androidx.room:room-runtime:2.6.1] /home/marc/.gradle/caches/8.11.1/transforms/84a91ec7bafcc30200715e7b207bf431/transformed/room-runtime-2.6.1/AndroidManifest.xml:27:13-37
+98
+99        <receiver
+99-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/marc/.gradle/caches/8.11.1/transforms/02a5caa58d3d944333ece092c4a0315d/transformed/profileinstaller-1.3.1/AndroidManifest.xml:34:9-52:20
+100            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+100-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/marc/.gradle/caches/8.11.1/transforms/02a5caa58d3d944333ece092c4a0315d/transformed/profileinstaller-1.3.1/AndroidManifest.xml:35:13-76
+101            android:directBootAware="false"
+101-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/marc/.gradle/caches/8.11.1/transforms/02a5caa58d3d944333ece092c4a0315d/transformed/profileinstaller-1.3.1/AndroidManifest.xml:36:13-44
+102            android:enabled="true"
+102-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/marc/.gradle/caches/8.11.1/transforms/02a5caa58d3d944333ece092c4a0315d/transformed/profileinstaller-1.3.1/AndroidManifest.xml:37:13-35
+103            android:exported="true"
+103-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/marc/.gradle/caches/8.11.1/transforms/02a5caa58d3d944333ece092c4a0315d/transformed/profileinstaller-1.3.1/AndroidManifest.xml:38:13-36
+104            android:permission="android.permission.DUMP" >
+104-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/marc/.gradle/caches/8.11.1/transforms/02a5caa58d3d944333ece092c4a0315d/transformed/profileinstaller-1.3.1/AndroidManifest.xml:39:13-57
+105            <intent-filter>
+105-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/marc/.gradle/caches/8.11.1/transforms/02a5caa58d3d944333ece092c4a0315d/transformed/profileinstaller-1.3.1/AndroidManifest.xml:40:13-42:29
+106                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+106-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/marc/.gradle/caches/8.11.1/transforms/02a5caa58d3d944333ece092c4a0315d/transformed/profileinstaller-1.3.1/AndroidManifest.xml:41:17-91
+106-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/marc/.gradle/caches/8.11.1/transforms/02a5caa58d3d944333ece092c4a0315d/transformed/profileinstaller-1.3.1/AndroidManifest.xml:41:25-88
+107            </intent-filter>
+108            <intent-filter>
+108-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/marc/.gradle/caches/8.11.1/transforms/02a5caa58d3d944333ece092c4a0315d/transformed/profileinstaller-1.3.1/AndroidManifest.xml:43:13-45:29
+109                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+109-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/marc/.gradle/caches/8.11.1/transforms/02a5caa58d3d944333ece092c4a0315d/transformed/profileinstaller-1.3.1/AndroidManifest.xml:44:17-85
+109-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/marc/.gradle/caches/8.11.1/transforms/02a5caa58d3d944333ece092c4a0315d/transformed/profileinstaller-1.3.1/AndroidManifest.xml:44:25-82
+110            </intent-filter>
+111            <intent-filter>
+111-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/marc/.gradle/caches/8.11.1/transforms/02a5caa58d3d944333ece092c4a0315d/transformed/profileinstaller-1.3.1/AndroidManifest.xml:46:13-48:29
+112                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+112-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/marc/.gradle/caches/8.11.1/transforms/02a5caa58d3d944333ece092c4a0315d/transformed/profileinstaller-1.3.1/AndroidManifest.xml:47:17-88
+112-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/marc/.gradle/caches/8.11.1/transforms/02a5caa58d3d944333ece092c4a0315d/transformed/profileinstaller-1.3.1/AndroidManifest.xml:47:25-85
+113            </intent-filter>
+114            <intent-filter>
+114-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/marc/.gradle/caches/8.11.1/transforms/02a5caa58d3d944333ece092c4a0315d/transformed/profileinstaller-1.3.1/AndroidManifest.xml:49:13-51:29
+115                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+115-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/marc/.gradle/caches/8.11.1/transforms/02a5caa58d3d944333ece092c4a0315d/transformed/profileinstaller-1.3.1/AndroidManifest.xml:50:17-95
+115-->[androidx.profileinstaller:profileinstaller:1.3.1] /home/marc/.gradle/caches/8.11.1/transforms/02a5caa58d3d944333ece092c4a0315d/transformed/profileinstaller-1.3.1/AndroidManifest.xml:50:25-92
+116            </intent-filter>
+117        </receiver>
+118    </application>
+119
+120</manifest>
