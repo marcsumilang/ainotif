@@ -18,7 +18,7 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
 class AiNotifApiClient(
-    var baseUrl: String = "http://10.0.2.2:3000"
+    var baseUrl: String = "https://ainotif-backend.marcsumilang.workers.dev"
 ) {
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {

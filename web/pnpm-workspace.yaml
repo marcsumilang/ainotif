@@ -2,3 +2,4 @@ allowBuilds:
   '@clerk/shared': true
   esbuild: true
   workerd: true
+  '@next/swc-linux-x64-gnu': true

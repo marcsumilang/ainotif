@@ -1,16 +1,6 @@
 import { Context, Next } from "hono";
 import { createClerkClient, verifyToken } from "@clerk/backend";
 
-const clerkSecretKey = process.env.CLERK_SECRET_KEY;
-const isDevMock = process.env.DEV_MOCK_AUTH === "true" || !clerkSecretKey;
-
-const clerk = clerkSecretKey
-  ? createClerkClient({
-      secretKey: clerkSecretKey,
-      publishableKey: process.env.CLERK_PUBLISHABLE_KEY,
-    })
-  : null;
-
 export interface AuthContext {
   userId: string;
   email?: string;
@@ -24,6 +14,10 @@ declare module "hono" {
 }
 
 export async function clerkAuthMiddleware(c: Context, next: Next) {
+  const clerkSecretKey = (c.env as any)?.CLERK_SECRET_KEY || process.env.CLERK_SECRET_KEY;
+  const devMockAuthEnv = (c.env as any)?.DEV_MOCK_AUTH ?? process.env.DEV_MOCK_AUTH;
+  const isDevMock = devMockAuthEnv === "true" || !clerkSecretKey;
+
   const authHeader = c.req.header("Authorization");
   const token = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;
 

@@ -20,21 +20,31 @@ export const ClassificationResultSchema = z.object({
 
 export type ClassificationResult = z.infer<typeof ClassificationResultSchema>;
 
-const openRouterApiKey = process.env.OPENROUTER_API_KEY;
-let openRouterClient: OpenAI | null = null;
+let cachedClient: OpenAI | null = null;
+let lastApiKey: string | undefined = undefined;
 
-if (openRouterApiKey) {
+export function getOpenRouterClient(): { client: OpenAI | null; apiKey: string | undefined } {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) return { client: null, apiKey: undefined };
+
+  if (cachedClient && lastApiKey === apiKey) {
+    return { client: cachedClient, apiKey };
+  }
+
   try {
-    openRouterClient = new OpenAI({
+    cachedClient = new OpenAI({
       baseURL: process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
-      apiKey: openRouterApiKey,
+      apiKey,
       defaultHeaders: {
         "HTTP-Referer": process.env.OPENROUTER_SITE_URL || "https://github.com/marcsumilang/ainotif",
         "X-Title": process.env.OPENROUTER_SITE_NAME || "AiNotif",
       },
     });
+    lastApiKey = apiKey;
+    return { client: cachedClient, apiKey };
   } catch (err) {
     console.warn("Failed to initialize OpenRouter client:", err);
+    return { client: null, apiKey };
   }
 }
 
@@ -95,6 +105,7 @@ export async function classifyNotification(payload: {
   const fullText = `${payload.title ? payload.title + " : " : ""}${payload.text}`.trim();
 
   // If OpenRouter API is configured, use OpenRouter structured output
+  const { client: openRouterClient, apiKey: openRouterApiKey } = getOpenRouterClient();
   if (openRouterClient && openRouterApiKey) {
     try {
       const model = process.env.OPENROUTER_MODEL || "openrouter/free";

@@ -1,29 +1,34 @@
-import { drizzle } from "drizzle-orm/neon-http";
+import { drizzle, type NeonHttpDatabase } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
 import * as schema from "./schema.js";
 import { eq, desc } from "drizzle-orm";
 import crypto from "crypto";
 
-const databaseUrl = process.env.DATABASE_URL;
+type DrizzleDb = NeonHttpDatabase<typeof schema>;
+let cachedDb: DrizzleDb | null = null;
+let lastDatabaseUrl: string | undefined = undefined;
 
-function initDrizzle() {
+export function getDb(): DrizzleDb | null {
+  const databaseUrl = process.env.DATABASE_URL;
   if (databaseUrl && databaseUrl.startsWith("postgres")) {
+    if (cachedDb && lastDatabaseUrl === databaseUrl) {
+      return cachedDb;
+    }
     try {
       const neonSql = neon(databaseUrl);
-      const instance = drizzle({ client: neonSql, schema });
+      cachedDb = drizzle({ client: neonSql, schema });
+      lastDatabaseUrl = databaseUrl;
       console.log("Connected to Neon Database over SSL.");
-      return instance;
+      return cachedDb;
     } catch (err) {
       console.warn("Failed to initialize Neon DB connection. Using in-memory fallback store:", err);
       return null;
     }
   }
-  console.log("DATABASE_URL not set or not postgres. Using in-memory store for development/testing.");
   return null;
 }
 
-export const db = initDrizzle();
-const drizzleDb = db;
+export const db = getDb();
 
 // In-Memory fallback store for seamless offline/dev testing
 interface MemoryStore {
@@ -40,6 +45,7 @@ const memoryStore: MemoryStore = {
 
 export async function ensureUser(id: string, email?: string, displayName?: string): Promise<schema.User> {
   const now = new Date();
+  const drizzleDb = getDb();
   if (drizzleDb) {
     const existing = await drizzleDb.query.users.findFirst({
       where: eq(schema.users.id, id),
@@ -86,6 +92,7 @@ export async function saveTransaction(data: {
 }): Promise<schema.Transaction> {
   await ensureUser(data.userId);
 
+  const drizzleDb = getDb();
   if (drizzleDb) {
     const [inserted] = await drizzleDb
       .insert(schema.transactions)
@@ -122,6 +129,7 @@ export async function saveTransaction(data: {
 }
 
 export async function getTransactions(userId: string, limit = 50): Promise<schema.Transaction[]> {
+  const drizzleDb = getDb();
   if (drizzleDb) {
     return await drizzleDb
       .select()
@@ -137,6 +145,7 @@ export async function getTransactions(userId: string, limit = 50): Promise<schem
 }
 
 export async function deleteTransaction(userId: string, id: string): Promise<boolean> {
+  const drizzleDb = getDb();
   if (drizzleDb) {
     const result = await drizzleDb
       .delete(schema.transactions)
@@ -163,6 +172,7 @@ export async function saveAlert(data: {
 }): Promise<schema.SuspiciousAlert> {
   await ensureUser(data.userId);
 
+  const drizzleDb = getDb();
   if (drizzleDb) {
     const [inserted] = await drizzleDb
       .insert(schema.suspiciousAlerts)
@@ -197,6 +207,7 @@ export async function saveAlert(data: {
 }
 
 export async function getAlerts(userId: string, limit = 50): Promise<schema.SuspiciousAlert[]> {
+  const drizzleDb = getDb();
   if (drizzleDb) {
     return await drizzleDb
       .select()
@@ -212,6 +223,7 @@ export async function getAlerts(userId: string, limit = 50): Promise<schema.Susp
 }
 
 export async function dismissAlert(userId: string, id: string): Promise<boolean> {
+  const drizzleDb = getDb();
   if (drizzleDb) {
     await drizzleDb
       .update(schema.suspiciousAlerts)

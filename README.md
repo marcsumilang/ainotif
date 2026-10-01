@@ -80,13 +80,50 @@ ainotif/
     ├── drizzle.config.ts
     ├── package.json
     └── .env.example
+
+└── web/                             # Big-Screen Web Command Center (Next.js + Cloudflare Wrangler)
+    ├── src/
+    │   ├── app/                     # Next.js App Router (Dashboard & API routes)
+    │   │   ├── api/                 # /transactions, /alerts, /stats, /process-notification
+    │   │   ├── page.tsx             # High-density Desktop Command Center UI
+    │   │   └── layout.tsx           # Dark cybersecurity theme layout
+    │   └── lib/                     # Drizzle schema, Neon DB connection, AI Classifier
+    ├── open-next.config.ts          # OpenNext Cloudflare Adapter configuration
+    ├── wrangler.jsonc               # Cloudflare Workers configuration
+    └── package.json
 ```
 
 ---
 
 ## Getting Started
 
-### 1. Backend Setup
+### 1. Web Dashboard (Next.js & Cloudflare Wrangler)
+
+The web dashboard provides a high-density, big-screen command center for inspecting all financial transactions, phishing alerts, spending analytics, and testing via an interactive notification simulator.
+
+```bash
+cd web
+
+# Install dependencies
+pnpm install
+
+# Start local Next.js development server (runs on port 3001)
+pnpm dev
+
+# Build Next.js application
+pnpm build
+
+# Build Cloudflare Worker bundle with OpenNext
+pnpm run build:worker
+
+# Preview Worker locally via Wrangler
+pnpm run preview
+
+# Deploy to Cloudflare Workers via Wrangler
+pnpm run deploy
+```
+
+### 2. Backend Setup
 
 ```bash
 cd backend
@@ -109,7 +146,7 @@ npx tsx test/api.test.ts
 pnpm dev
 ```
 
-### 2. Android App Setup
+### 3. Android App Setup
 
 ```bash
 cd android
@@ -128,17 +165,22 @@ cd android
 
 ## Key Features
 
-1. **Strict Local OTP / Security Pre-Filter**:
+1. **Big-Screen Web Command Center (`web/`)**:
+   - High-density data grid optimized for desktop, 1440p, and 4K displays.
+   - Financial transactions ledger with category badges, source app tags, amount flow colors, and slide-over inspector modal for full raw notification payloads.
+   - Phishing & scam shield with 0-100 risk gauges, detected threat cues, and one-tap threat dismissal.
+   - Expense distribution charts and cash flow dynamics.
+   - Interactive in-browser notification simulator with instant presets (groceries, coffee, direct deposit, urgent scam SMS, and OTP verification).
+   - Deploys seamlessly to Cloudflare Workers using `@opennextjs/cloudflare` and Wrangler.
+
+2. **Strict Local OTP / Security Pre-Filter**:
    - High-performance regular expressions running on the device instantly discard any message containing one-time passwords, 2FA codes, or password reset tokens.
    - These messages are **never sent over the network** or logged to cloud servers.
 
-2. **Typesafe AI Transaction & Phishing Detection**:
+3. **Typesafe AI Transaction & Phishing Detection**:
    - OpenRouter (Free Models such as `openrouter/free`, `google/gemma-4-31b-it:free`, `qwen/qwen3.8-27b:free`) with Zod schema enforcement extracts precise transaction data (`amount`, `currency`, `merchant`, `category`, `type`).
    - Evaluates urgency, sender legitimacy, suspicious short links, and phishing lures with automated risk scores (`0-100`).
 
-3. **In-App Notification Simulator**:
-   - Included in the Android app under the **Settings** tab.
-   - Allows one-tap testing of grocery transactions, coffee shop purchases, urgent scam SMS, and OTP dropping without needing real bank notifications.
-
 4. **Zero-Configuration Offline / Demo Mode**:
-   - Both backend and mobile app include seamless mock/demo fallbacks, so developers can test the full end-to-end pipeline before configuring live Neon DB or Clerk keys.
+   - Web dashboard, backend, and mobile app include seamless mock/demo fallbacks, so developers can test the full end-to-end pipeline before configuring live Neon DB or Clerk keys.
+

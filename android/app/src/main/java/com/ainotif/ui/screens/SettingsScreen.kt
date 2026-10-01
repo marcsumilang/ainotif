@@ -304,7 +304,7 @@ fun SettingsScreen(
 
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "Use http://10.0.2.2:3000 for standard Android Emulator or your PC's LAN IP for physical device.",
+                            "Default points to your deployed Cloudflare Worker API. You can also specify a local LAN or emulator IP.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                         )
