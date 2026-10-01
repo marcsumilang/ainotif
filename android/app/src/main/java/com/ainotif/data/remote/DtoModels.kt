@@ -53,6 +53,26 @@ data class TransactionDto(
 )
 
 @Serializable
+data class CreateTransactionDto(
+    val amount: Double,
+    val currency: String = "USD",
+    val merchant: String,
+    val category: String = "General",
+    val type: String = "DEBIT",
+    val rawNotification: String = "Local sync",
+    val sourcePackage: String? = null,
+    val timestamp: Long? = null
+)
+
+@Serializable
+data class UpdateTransactionDto(
+    val merchant: String? = null,
+    val category: String? = null,
+    val amount: Double? = null,
+    val note: String? = null
+)
+
+@Serializable
 data class TransactionsResponse(
     val transactions: List<TransactionDto>
 )

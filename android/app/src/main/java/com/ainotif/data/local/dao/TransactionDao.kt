@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import com.ainotif.data.local.entity.TransactionEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -21,6 +22,15 @@ interface TransactionDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(transactions: List<TransactionEntity>)
 
+    @Update
+    suspend fun updateTransaction(transaction: TransactionEntity)
+
+    @Query("SELECT * FROM transactions WHERE isSynced = 0")
+    suspend fun getUnsyncedTransactions(): List<TransactionEntity>
+
+    @Query("UPDATE transactions SET isSynced = 1 WHERE id = :id")
+    suspend fun markSynced(id: String)
+
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun deleteById(id: String)
 
@@ -32,4 +42,7 @@ interface TransactionDao {
 
     @Query("SELECT SUM(amount) FROM transactions WHERE type = 'CREDIT'")
     suspend fun getTotalCredit(): Double?
+
+    @Query("SELECT EXISTS(SELECT 1 FROM transactions WHERE rawNotification = :rawNotification AND ABS(timestamp - :timestamp) <= :toleranceMs LIMIT 1)")
+    suspend fun hasSimilarTransaction(rawNotification: String, timestamp: Long, toleranceMs: Long = 60000L): Boolean
 }

@@ -1,0 +1,132 @@
+package com.ainotif.data.local
+
+import android.content.Context
+import android.content.SharedPreferences
+import com.ainotif.BuildConfig
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+class UserPreferencesManager(context: Context) {
+
+    private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    private val _baseCurrency = MutableStateFlow(prefs.getString(KEY_BASE_CURRENCY, "USD") ?: "USD")
+    val baseCurrency: StateFlow<String> = _baseCurrency.asStateFlow()
+
+    private val _monthlyBudget = MutableStateFlow(prefs.getFloat(KEY_MONTHLY_BUDGET, 2000.0f).toDouble())
+    val monthlyBudget: StateFlow<Double> = _monthlyBudget.asStateFlow()
+
+    private val _anomalyThreshold = MutableStateFlow(prefs.getFloat(KEY_ANOMALY_THRESHOLD, 300.0f).toDouble())
+    val anomalyThreshold: StateFlow<Double> = _anomalyThreshold.asStateFlow()
+
+    private val _isBiometricEnabled = MutableStateFlow(prefs.getBoolean(KEY_BIOMETRIC_ENABLED, false))
+    val isBiometricEnabled: StateFlow<Boolean> = _isBiometricEnabled.asStateFlow()
+
+    private val _scamSensitivity = MutableStateFlow(prefs.getString(KEY_SCAM_SENSITIVITY, "MEDIUM") ?: "MEDIUM")
+    val scamSensitivity: StateFlow<String> = _scamSensitivity.asStateFlow()
+
+    private val _isOfflineOnly = MutableStateFlow(prefs.getBoolean(KEY_OFFLINE_ONLY, false))
+    val isOfflineOnly: StateFlow<Boolean> = _isOfflineOnly.asStateFlow()
+
+    private val _isHighPriorityPushEnabled = MutableStateFlow(prefs.getBoolean(KEY_HIGH_PRIORITY_PUSH, true))
+    val isHighPriorityPushEnabled: StateFlow<Boolean> = _isHighPriorityPushEnabled.asStateFlow()
+
+    private val _isOnboarded = MutableStateFlow(prefs.getBoolean(KEY_IS_ONBOARDED, false))
+    val isOnboarded: StateFlow<Boolean> = _isOnboarded.asStateFlow()
+
+    private val _isDeveloperModeUnlocked = MutableStateFlow(prefs.getBoolean(KEY_DEV_MODE_UNLOCKED, false))
+    val isDeveloperModeUnlocked: StateFlow<Boolean> = _isDeveloperModeUnlocked.asStateFlow()
+
+    private val _lastSyncTime = MutableStateFlow(prefs.getLong(KEY_LAST_SYNC_TIME, 0L))
+    val lastSyncTime: StateFlow<Long> = _lastSyncTime.asStateFlow()
+
+    private val _backendUrl = MutableStateFlow(prefs.getString(KEY_BACKEND_URL, BuildConfig.BACKEND_BASE_URL) ?: BuildConfig.BACKEND_BASE_URL)
+    val backendUrl: StateFlow<String> = _backendUrl.asStateFlow()
+
+    fun setBaseCurrency(currency: String) {
+        prefs.edit().putString(KEY_BASE_CURRENCY, currency).apply()
+        _baseCurrency.value = currency
+    }
+
+    fun setMonthlyBudget(budget: Double) {
+        prefs.edit().putFloat(KEY_MONTHLY_BUDGET, budget.toFloat()).apply()
+        _monthlyBudget.value = budget
+    }
+
+    fun setAnomalyThreshold(threshold: Double) {
+        prefs.edit().putFloat(KEY_ANOMALY_THRESHOLD, threshold.toFloat()).apply()
+        _anomalyThreshold.value = threshold
+    }
+
+    fun setBiometricEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_BIOMETRIC_ENABLED, enabled).apply()
+        _isBiometricEnabled.value = enabled
+    }
+
+    fun setScamSensitivity(sensitivity: String) {
+        prefs.edit().putString(KEY_SCAM_SENSITIVITY, sensitivity).apply()
+        _scamSensitivity.value = sensitivity
+    }
+
+    fun setOfflineOnly(offline: Boolean) {
+        prefs.edit().putBoolean(KEY_OFFLINE_ONLY, offline).apply()
+        _isOfflineOnly.value = offline
+    }
+
+    fun setHighPriorityPushEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_HIGH_PRIORITY_PUSH, enabled).apply()
+        _isHighPriorityPushEnabled.value = enabled
+    }
+
+    fun setOnboarded(onboarded: Boolean) {
+        prefs.edit().putBoolean(KEY_IS_ONBOARDED, onboarded).apply()
+        _isOnboarded.value = onboarded
+    }
+
+    fun setDeveloperModeUnlocked(unlocked: Boolean) {
+        prefs.edit().putBoolean(KEY_DEV_MODE_UNLOCKED, unlocked).apply()
+        _isDeveloperModeUnlocked.value = unlocked
+    }
+
+    fun setLastSyncTime(time: Long) {
+        prefs.edit().putLong(KEY_LAST_SYNC_TIME, time).apply()
+        _lastSyncTime.value = time
+    }
+
+    fun setBackendUrl(url: String) {
+        prefs.edit().putString(KEY_BACKEND_URL, url).apply()
+        _backendUrl.value = url
+    }
+
+    fun resetBackendUrl() {
+        prefs.edit().remove(KEY_BACKEND_URL).apply()
+        _backendUrl.value = BuildConfig.BACKEND_BASE_URL
+    }
+
+    /**
+     * Threshold risk score required to trigger an alert according to user sensitivity.
+     */
+    fun getEffectiveRiskThreshold(): Int {
+        return when (_scamSensitivity.value.uppercase()) {
+            "HIGH" -> 40
+            "LOW" -> 80
+            else -> 60 // MEDIUM
+        }
+    }
+
+    companion object {
+        private const val PREFS_NAME = "ainotif_user_preferences"
+        private const val KEY_BASE_CURRENCY = "pref_base_currency"
+        private const val KEY_MONTHLY_BUDGET = "pref_monthly_budget"
+        private const val KEY_ANOMALY_THRESHOLD = "pref_anomaly_threshold"
+        private const val KEY_BIOMETRIC_ENABLED = "pref_biometric_enabled"
+        private const val KEY_SCAM_SENSITIVITY = "pref_scam_sensitivity"
+        private const val KEY_OFFLINE_ONLY = "pref_offline_only"
+        private const val KEY_HIGH_PRIORITY_PUSH = "pref_high_priority_push"
+        private const val KEY_IS_ONBOARDED = "pref_is_onboarded"
+        private const val KEY_DEV_MODE_UNLOCKED = "pref_dev_mode_unlocked"
+        private const val KEY_LAST_SYNC_TIME = "pref_last_sync_time"
+        private const val KEY_BACKEND_URL = "pref_backend_url"
+    }
+}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { classifyNotification } from "@/lib/classifier";
 import { saveTransaction, saveAlert } from "@/lib/db";
+import { eventBus } from "@/lib/events";
 
 const ProcessNotificationSchema = z.object({
   text: z.string().min(1, "Notification text is required"),
@@ -43,6 +44,7 @@ export async function POST(req: NextRequest) {
         timestamp: postTime,
       });
       savedRecordId = alert.id;
+      eventBus.emit("alert_created", { alert, userId: finalUserId });
     } else if (analysis.classification === "TRANSACTION" && analysis.transaction) {
       const tx = await saveTransaction({
         userId: finalUserId,
@@ -56,6 +58,7 @@ export async function POST(req: NextRequest) {
         timestamp: postTime,
       });
       savedRecordId = tx.id;
+      eventBus.emit("transaction_created", { transaction: tx, userId: finalUserId });
     }
 
     return NextResponse.json({

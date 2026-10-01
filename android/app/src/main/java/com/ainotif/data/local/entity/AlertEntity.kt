@@ -12,5 +12,6 @@ data class AlertEntity(
     val reason: String,
     val phishingCues: String,
     val timestamp: Long,
-    val isDismissed: Boolean = false
+    val isDismissed: Boolean = false,
+    val isSynced: Boolean = true
 )

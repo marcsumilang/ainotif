@@ -17,6 +17,7 @@ android {
         versionCode = 1
         versionName = "1.0.0"
 
+        buildConfigField("String", "BACKEND_BASE_URL", "\"https://ainotif-backend.marcsumilang.workers.dev\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -44,6 +45,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -53,6 +55,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.biometric:biometric:1.2.0-alpha05")
 
     // Jetpack Compose BOM
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")

@@ -304,12 +304,59 @@ export async function deleteTransaction(userId: string, id: string): Promise<boo
     }
   }
 
-  const idx = memoryStore.transactions.findIndex((t) => t.id === id);
-  if (idx !== -1) {
-    memoryStore.transactions.splice(idx, 1);
+  const index = memoryStore.transactions.findIndex((t) => t.id === id);
+  if (index !== -1) {
+    memoryStore.transactions.splice(index, 1);
     return true;
   }
-  return true;
+  return false;
+}
+
+export async function updateTransaction(
+  userId: string,
+  id: string,
+  updates: { merchant?: string; category?: string; amount?: number; note?: string }
+): Promise<schema.Transaction | null> {
+  const drizzleDb = getDb();
+  if (drizzleDb) {
+    try {
+      const [updated] = await drizzleDb
+        .update(schema.transactions)
+        .set({
+          ...(updates.merchant ? { merchant: updates.merchant } : {}),
+          ...(updates.category ? { category: updates.category } : {}),
+          ...(updates.amount ? { amount: updates.amount } : {}),
+        })
+        .where(eq(schema.transactions.id, id))
+        .returning();
+      if (updated) return updated;
+    } catch {}
+  }
+
+  const tx = memoryStore.transactions.find((t) => t.id === id);
+  if (tx) {
+    if (updates.merchant) tx.merchant = updates.merchant;
+    if (updates.category) tx.category = updates.category;
+    if (updates.amount) tx.amount = updates.amount;
+    return tx;
+  }
+  return null;
+}
+
+export async function bulkDeleteTransactions(userId: string, ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  for (const id of ids) {
+    await deleteTransaction(userId, id);
+  }
+  return ids.length;
+}
+
+export async function bulkUpdateCategory(userId: string, ids: string[], category: string): Promise<number> {
+  if (ids.length === 0) return 0;
+  for (const id of ids) {
+    await updateTransaction(userId, id, { category });
+  }
+  return ids.length;
 }
 
 export async function saveAlert(data: {

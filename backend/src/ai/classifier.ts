@@ -211,24 +211,36 @@ export function fallbackHeuristicClassifier(text: string, packageName?: string):
     }
   }
 
-  // Suspicious link patterns (shorteners, raw IP, http)
+  // Advanced Real-time Phishing URL Threat Intelligence
   const linkMatches = text.match(/https?:\/\/[^\s]+/gi) || [];
+  const rawIpRegex = /^https?:\/\/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?(?:\/.*)?$/i;
+  const deceptiveBankSubstrings = ["bank-verify", "login-secure", "update-account", "chase-alert", "wellsfargo-verify", "bofa-security", "paypal-auth", "secure-account"];
+  const suspiciousShortenersAndTlds = ["bit.ly", "tinyurl.com", "t.co", "cutt.ly", "rb.gy", "is.gd", "tiny.cc", "ow.ly", ".xyz", ".top", ".click", ".buzz", ".cam", ".work"];
+
   for (const link of linkMatches) {
     const linkLower = link.toLowerCase();
-    if (
-      linkLower.includes("bit.ly") ||
-      linkLower.includes("tinyurl") ||
-      linkLower.includes("t.co") ||
-      linkLower.includes(".xyz") ||
-      linkLower.includes(".top") ||
-      linkLower.includes("bank-verify") ||
-      linkLower.includes("login-secure") ||
-      linkLower.includes("update-account")
-    ) {
-      phishingIndicators.push(`Suspicious URL detected: ${link}`);
+    let isThreat = false;
+
+    if (rawIpRegex.test(link)) {
+      phishingIndicators.push(`Deceptive raw IP host URL detected: ${link}`);
+      riskScore += 55;
+      isThreat = true;
+    }
+
+    if (suspiciousShortenersAndTlds.some((s) => linkLower.includes(s))) {
+      phishingIndicators.push(`Suspicious/shortened redirect URL masks real destination: ${link}`);
       riskScore += 45;
-    } else if (!linkLower.includes("chase.com") && !linkLower.includes("revolut.com") && !linkLower.includes("paypal.com")) {
-      phishingIndicators.push(`External link in financial alert: ${link}`);
+      isThreat = true;
+    }
+
+    if (deceptiveBankSubstrings.some((d) => linkLower.includes(d))) {
+      phishingIndicators.push(`Deceptive domain mimics banking brand: ${link}`);
+      riskScore += 50;
+      isThreat = true;
+    }
+
+    if (!isThreat && !linkLower.includes("chase.com") && !linkLower.includes("revolut.com") && !linkLower.includes("paypal.com") && !linkLower.includes("bankofamerica.com")) {
+      phishingIndicators.push(`External unverified link in financial alert: ${link}`);
       riskScore += 20;
     }
   }

@@ -1,5 +1,7 @@
 package com.ainotif.ui.screens
 
+import android.content.Context
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -164,6 +167,7 @@ fun AlertItemCard(
     alert: AlertEntity,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
     val formattedDate = remember(alert.timestamp) {
         val sdf = SimpleDateFormat("MMM dd, h:mm a", Locale.getDefault())
         sdf.format(Date(alert.timestamp))
@@ -251,6 +255,35 @@ fun AlertItemCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            // Actionable Security Advice Banner
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                color = Color(0xFFFEF3C7) // Soft amber background
+            ) {
+                Row(
+                    modifier = Modifier.padding(10.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(
+                        Icons.Default.Shield,
+                        contentDescription = null,
+                        tint = Color(0xFFB45309),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "AiNotif Security Advice: Do NOT tap links or call the number in this message. Instead, call your bank using the phone number on the back of your physical card.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF92400E),
+                        fontWeight = FontWeight.Medium,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
             // Raw Notification Content Quote
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -272,22 +305,56 @@ fun AlertItemCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // Dismiss Button
+            // Action Buttons: Share Warning & Dismiss Threat
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedButton(
+                    onClick = {
+                        shareScamWarning(context, alert)
+                    },
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Share Warning", fontSize = 13.sp)
+                }
+
+                Button(
                     onClick = onDismiss,
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
                     Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Dismiss Threat")
+                    Text("Dismiss", fontSize = 13.sp)
                 }
             }
         }
     }
+}
+
+private fun shareScamWarning(context: Context, alert: AlertEntity) {
+    val shareText = """
+        🚨 AiNotif Scam Alert (${alert.riskScore}% Risk)
+        Reason: ${alert.reason}
+        
+        Original intercepted message:
+        "${alert.rawNotification}"
+        
+        Security Advice: Do not click any links or provide sensitive credentials.
+    """.trimIndent()
+
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, "⚠️ Phishing Scam Warning Intercepted")
+        putExtra(Intent.EXTRA_TEXT, shareText)
+    }
+    val chooser = Intent.createChooser(intent, "Share Scam Warning")
+    chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    context.startActivity(chooser)
 }

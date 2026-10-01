@@ -47,7 +47,8 @@ object RegexFilter {
     "transferred", "transfer to", "sent to", "received from", "received",
     "credited", "refunded", "withdrawn", "withdrawal", "deposit",
     "payment of", "bill payment", "authorized", "card ending",
-    "account suspended", "security alert", "unauthorized access" // Phishing cues also forwarded for AI safety check
+    "account suspended", "account locked", "security alert", "unauthorized access",
+    "action required", "verify your identity", "card deactivated", "compromised"
   )
 
   // Known banking & payment package prefixes

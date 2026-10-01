@@ -92,4 +92,29 @@ class AiNotifApiClient(
         }
         response.status.isSuccess()
     }
+
+    suspend fun deleteTransaction(txId: String, authToken: String): Result<Boolean> = runCatching {
+        val response = client.delete("$baseUrl/api/transactions/$txId") {
+            header("Authorization", "Bearer $authToken")
+        }
+        response.status.isSuccess()
+    }
+
+    suspend fun updateTransaction(txId: String, update: UpdateTransactionDto, authToken: String): Result<Boolean> = runCatching {
+        val response = client.patch("$baseUrl/api/transactions/$txId") {
+            contentType(ContentType.Application.Json)
+            header("Authorization", "Bearer $authToken")
+            setBody(update)
+        }
+        response.status.isSuccess()
+    }
+
+    suspend fun createTransaction(tx: CreateTransactionDto, authToken: String): Result<Boolean> = runCatching {
+        val response = client.post("$baseUrl/api/transactions") {
+            contentType(ContentType.Application.Json)
+            header("Authorization", "Bearer $authToken")
+            setBody(tx)
+        }
+        response.status.isSuccess()
+    }
 }

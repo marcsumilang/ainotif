@@ -17,7 +17,7 @@ import com.ainotif.data.local.entity.TransactionEntity
         AlertEntity::class,
         NotificationLogEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

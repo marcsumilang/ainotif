@@ -1,7 +1,7 @@
 import { drizzle, type NeonHttpDatabase } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
 import * as schema from "./schema.js";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, inArray } from "drizzle-orm";
 import crypto from "crypto";
 
 type DrizzleDb = NeonHttpDatabase<typeof schema>;
@@ -149,7 +149,7 @@ export async function deleteTransaction(userId: string, id: string): Promise<boo
   if (drizzleDb) {
     const result = await drizzleDb
       .delete(schema.transactions)
-      .where(eq(schema.transactions.id, id));
+      .where(and(eq(schema.transactions.id, id), eq(schema.transactions.userId, userId)));
     return true;
   } else {
     const idx = memoryStore.transactions.findIndex((t) => t.id === id && t.userId === userId);
@@ -158,6 +158,73 @@ export async function deleteTransaction(userId: string, id: string): Promise<boo
       return true;
     }
     return false;
+  }
+}
+
+export async function updateTransaction(
+  userId: string,
+  id: string,
+  updates: { merchant?: string; category?: string; amount?: number; note?: string }
+): Promise<schema.Transaction | null> {
+  const drizzleDb = getDb();
+  if (drizzleDb) {
+    const [updated] = await drizzleDb
+      .update(schema.transactions)
+      .set({
+        ...(updates.merchant ? { merchant: updates.merchant } : {}),
+        ...(updates.category ? { category: updates.category } : {}),
+        ...(updates.amount ? { amount: updates.amount } : {}),
+      })
+      .where(and(eq(schema.transactions.id, id), eq(schema.transactions.userId, userId)))
+      .returning();
+    return updated || null;
+  } else {
+    const tx = memoryStore.transactions.find((t) => t.id === id && t.userId === userId);
+    if (tx) {
+      if (updates.merchant) tx.merchant = updates.merchant;
+      if (updates.category) tx.category = updates.category;
+      if (updates.amount) tx.amount = updates.amount;
+      return tx;
+    }
+    return null;
+  }
+}
+
+export async function bulkDeleteTransactions(userId: string, ids: string[]): Promise<number> {
+  if (ids.length === 0) return 0;
+  const drizzleDb = getDb();
+  if (drizzleDb) {
+    await drizzleDb
+      .delete(schema.transactions)
+      .where(and(inArray(schema.transactions.id, ids), eq(schema.transactions.userId, userId)));
+    return ids.length;
+  } else {
+    const initialLen = memoryStore.transactions.length;
+    memoryStore.transactions = memoryStore.transactions.filter(
+      (t) => !(t.userId === userId && ids.includes(t.id))
+    );
+    return initialLen - memoryStore.transactions.length;
+  }
+}
+
+export async function bulkUpdateCategory(userId: string, ids: string[], category: string): Promise<number> {
+  if (ids.length === 0) return 0;
+  const drizzleDb = getDb();
+  if (drizzleDb) {
+    await drizzleDb
+      .update(schema.transactions)
+      .set({ category })
+      .where(and(inArray(schema.transactions.id, ids), eq(schema.transactions.userId, userId)));
+    return ids.length;
+  } else {
+    let count = 0;
+    for (const t of memoryStore.transactions) {
+      if (t.userId === userId && ids.includes(t.id)) {
+        t.category = category;
+        count++;
+      }
+    }
+    return count;
   }
 }
 

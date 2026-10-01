@@ -14,5 +14,6 @@ data class TransactionEntity(
     val rawNotification: String,
     val sourcePackage: String?,
     val timestamp: Long,
+    val note: String? = null,
     val isSynced: Boolean = true
 )
