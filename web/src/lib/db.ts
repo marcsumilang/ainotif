@@ -1,7 +1,7 @@
 import { drizzle, type NeonHttpDatabase } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
 import * as schema from "./schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, gte, lte } from "drizzle-orm";
 
 type DrizzleDb = NeonHttpDatabase<typeof schema>;
 let cachedDb: DrizzleDb | null = null;
@@ -58,7 +58,7 @@ const seedTransactions: schema.Transaction[] = [
     amount: 3450.00,
     currency: "USD",
     merchant: "TechCorp Global Inc",
-    category: "Salary",
+    category: "Income",
     type: "CREDIT",
     rawNotification: "Bank of America Alert: Direct Deposit of $3,450.00 from TECHCORP GLOBAL INC has arrived.",
     sourcePackage: "com.infonow.bofa",
@@ -71,7 +71,7 @@ const seedTransactions: schema.Transaction[] = [
     amount: 18.75,
     currency: "USD",
     merchant: "Blue Bottle Coffee",
-    category: "Dining",
+    category: "Food & Dining",
     type: "DEBIT",
     rawNotification: "Citi Alerts: A charge of $18.75 at Blue Bottle Coffee was authorized.",
     sourcePackage: "com.citibank.mobile.citibankmobile",
@@ -97,7 +97,7 @@ const seedTransactions: schema.Transaction[] = [
     amount: 120.00,
     currency: "USD",
     merchant: "Pacific Gas & Electric",
-    category: "Utilities",
+    category: "Bills & Utilities",
     type: "DEBIT",
     rawNotification: "Wells Fargo: Scheduled automatic payment of $120.00 to PG&E was completed.",
     sourcePackage: "com.wf.wellsfargomobile",
@@ -110,7 +110,7 @@ const seedTransactions: schema.Transaction[] = [
     amount: 500.00,
     currency: "USD",
     merchant: "Transfer to Savings",
-    category: "Transfer",
+    category: "Transfers",
     type: "TRANSFER",
     rawNotification: "Revolut: Successfully transferred $500.00 to High Yield Savings Vault.",
     sourcePackage: "com.revolut.revolut",
@@ -270,6 +270,7 @@ export async function incrementNotificationCount(userId: string): Promise<number
 
 
 export async function saveTransaction(data: {
+  id?: string;
   userId: string;
   amount: number;
   currency: string;
@@ -285,9 +286,33 @@ export async function saveTransaction(data: {
   const drizzleDb = getDb();
   if (drizzleDb) {
     try {
+      // 1. Check if explicit ID already exists
+      if (data.id) {
+        const existingById = await drizzleDb.query.transactions.findFirst({
+          where: eq(schema.transactions.id, data.id),
+        });
+        if (existingById) return existingById;
+      }
+
+      // 2. Check for duplicate by content & timestamp within 5 minutes
+      const fiveMinBefore = new Date(data.timestamp.getTime() - 300000);
+      const fiveMinAfter = new Date(data.timestamp.getTime() + 300000);
+
+      const existingMatch = await drizzleDb.query.transactions.findFirst({
+        where: and(
+          eq(schema.transactions.userId, data.userId),
+          eq(schema.transactions.merchant, data.merchant),
+          eq(schema.transactions.amount, data.amount),
+          gte(schema.transactions.timestamp, fiveMinBefore),
+          lte(schema.transactions.timestamp, fiveMinAfter)
+        ),
+      });
+      if (existingMatch) return existingMatch;
+
       const [inserted] = await drizzleDb
         .insert(schema.transactions)
         .values({
+          ...(data.id ? { id: data.id } : {}),
           userId: data.userId,
           amount: data.amount,
           currency: data.currency,
@@ -305,8 +330,21 @@ export async function saveTransaction(data: {
     }
   }
 
+  // Memory store deduplication
+  if (data.id) {
+    const existing = memoryStore.transactions.find((t) => t.id === data.id);
+    if (existing) return existing;
+  }
+  const existing = memoryStore.transactions.find((t) =>
+    t.userId === data.userId &&
+    t.merchant.toLowerCase() === data.merchant.toLowerCase() &&
+    Math.abs(t.amount - data.amount) < 0.001 &&
+    Math.abs(t.timestamp.getTime() - data.timestamp.getTime()) <= 300000
+  );
+  if (existing) return existing;
+
   const item: schema.Transaction = {
-    id: `tx-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+    id: data.id || `tx-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
     userId: data.userId,
     amount: data.amount,
     currency: data.currency,
@@ -424,6 +462,19 @@ export async function saveAlert(data: {
   const drizzleDb = getDb();
   if (drizzleDb) {
     try {
+      const fiveMinBefore = new Date(data.timestamp.getTime() - 300000);
+      const fiveMinAfter = new Date(data.timestamp.getTime() + 300000);
+
+      const existingMatch = await drizzleDb.query.suspiciousAlerts.findFirst({
+        where: and(
+          eq(schema.suspiciousAlerts.userId, data.userId),
+          eq(schema.suspiciousAlerts.rawNotification, data.rawNotification),
+          gte(schema.suspiciousAlerts.timestamp, fiveMinBefore),
+          lte(schema.suspiciousAlerts.timestamp, fiveMinAfter)
+        ),
+      });
+      if (existingMatch) return existingMatch;
+
       const [inserted] = await drizzleDb
         .insert(schema.suspiciousAlerts)
         .values({
@@ -442,6 +493,13 @@ export async function saveAlert(data: {
       console.warn("DB alert insert failed, saving to memory:", err);
     }
   }
+
+  const existing = memoryStore.alerts.find((a) =>
+    a.userId === data.userId &&
+    a.rawNotification === data.rawNotification &&
+    Math.abs(a.timestamp.getTime() - data.timestamp.getTime()) <= 300000
+  );
+  if (existing) return existing;
 
   const item: schema.SuspiciousAlert = {
     id: `alert-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,

@@ -39,11 +39,22 @@ class TransactionRepository(
     val allAlertsFlow: Flow<List<AlertEntity>> = db.alertDao().getAllAlertsFlow()
     val logsFlow: Flow<List<NotificationLogEntity>> = db.notificationLogDao().getRecentLogsFlow()
 
-    suspend fun hasSimilarRecord(rawNotification: String, timestamp: Long, toleranceMs: Long = 60000L): Boolean {
+    suspend fun hasSimilarRecord(rawNotification: String, timestamp: Long, toleranceMs: Long = 300000L): Boolean {
         if (rawNotification.isBlank()) return false
         val hasTx = db.transactionDao().hasSimilarTransaction(rawNotification, timestamp, toleranceMs)
         if (hasTx) return true
         return db.alertDao().hasSimilarAlert(rawNotification, timestamp, toleranceMs)
+    }
+
+    suspend fun hasSimilarTransactionExact(
+        rawNotification: String,
+        amount: Double,
+        currency: String,
+        merchant: String,
+        timestamp: Long,
+        toleranceMs: Long = 300000L
+    ): Boolean {
+        return db.transactionDao().hasSimilarTransactionExact(rawNotification, amount, currency, merchant, timestamp, toleranceMs)
     }
 
     suspend fun processIncomingNotification(
@@ -51,7 +62,7 @@ class TransactionRepository(
         text: String?,
         packageName: String?,
         timestamp: Long = System.currentTimeMillis(),
-        skipIfDuplicate: Boolean = false
+        skipIfDuplicate: Boolean = true
     ): ProcessNotificationOutcome {
         val rawNotification = "${title?.let { "$it: " }.orEmpty()}${text.orEmpty()}".trim()
         if (skipIfDuplicate && hasSimilarRecord(rawNotification, timestamp)) {
@@ -230,6 +241,21 @@ class TransactionRepository(
                 analysis.transaction.category
             )
 
+            val rawFormatted = "${title?.let { "$it: " }.orEmpty()}${text.orEmpty()}".trim()
+
+            // Check if exact similar transaction already exists
+            val isDuplicate = db.transactionDao().hasSimilarTransactionExact(
+                rawNotification = rawFormatted,
+                amount = analysis.transaction.amount,
+                currency = analysis.transaction.currency,
+                merchant = analysis.transaction.merchant,
+                timestamp = timestamp,
+                toleranceMs = 300000L
+            )
+            if (isDuplicate) {
+                return ProcessNotificationOutcome.Ignored
+            }
+
             val tx = TransactionEntity(
                 id = savedRecordId ?: UUID.randomUUID().toString(),
                 amount = analysis.transaction.amount,
@@ -237,7 +263,7 @@ class TransactionRepository(
                 merchant = analysis.transaction.merchant,
                 category = finalCategory,
                 type = analysis.transaction.type,
-                rawNotification = "${title?.let { "$it: " }.orEmpty()}${text.orEmpty()}",
+                rawNotification = rawFormatted,
                 sourcePackage = packageName,
                 timestamp = timestamp,
                 isSynced = isSynced
@@ -288,6 +314,7 @@ class TransactionRepository(
         for (tx in unsyncedTxs) {
             val created = apiClient.createTransaction(
                 CreateTransactionDto(
+                    id = tx.id,
                     amount = tx.amount,
                     currency = tx.currency,
                     merchant = tx.merchant,
@@ -304,21 +331,37 @@ class TransactionRepository(
             }
         }
 
-        // 2. Fetch remote transactions
+        // 2. Fetch remote transactions and reconcile with local transactions
         val remoteTxs = apiClient.fetchTransactions(token).getOrNull()
         if (remoteTxs != null) {
-            val entities = remoteTxs.map { dto ->
-                TransactionEntity(
-                    id = dto.id,
+            val entities = mutableListOf<TransactionEntity>()
+            for (dto in remoteTxs) {
+                val parsedTime = parseTimestamp(dto.timestamp)
+                val existingLocal = db.transactionDao().findMatchingTransaction(
+                    rawNotification = dto.rawNotification,
                     amount = dto.amount,
                     currency = dto.currency,
                     merchant = dto.merchant,
-                    category = categoryRulesManager.applyCustomRules(dto.merchant, dto.category),
-                    type = dto.type,
-                    rawNotification = dto.rawNotification,
-                    sourcePackage = dto.sourcePackage,
-                    timestamp = parseTimestamp(dto.timestamp),
-                    isSynced = true
+                    timestamp = parsedTime,
+                    toleranceMs = 300000L
+                )
+                if (existingLocal != null && existingLocal.id != dto.id) {
+                    db.transactionDao().deleteById(existingLocal.id)
+                }
+
+                entities.add(
+                    TransactionEntity(
+                        id = dto.id,
+                        amount = dto.amount,
+                        currency = dto.currency,
+                        merchant = dto.merchant,
+                        category = categoryRulesManager.applyCustomRules(dto.merchant, dto.category),
+                        type = dto.type,
+                        rawNotification = dto.rawNotification,
+                        sourcePackage = dto.sourcePackage,
+                        timestamp = parsedTime,
+                        isSynced = true
+                    )
                 )
             }
             db.transactionDao().insertAll(entities)
@@ -343,21 +386,62 @@ class TransactionRepository(
             db.alertDao().insertAll(entities)
         }
 
+        // 4. Run local database deduplication to clean up any duplicate items
+        deduplicateLocalRecords()
+
         preferencesManager.setLastSyncTime(System.currentTimeMillis())
+    }
+
+    suspend fun deduplicateLocalRecords() {
+        val allTxs = db.transactionDao().getAllTransactions()
+        val toDelete = mutableListOf<String>()
+        val seen = mutableMapOf<String, TransactionEntity>()
+
+        for (tx in allTxs) {
+            val timeBucket = tx.timestamp / 300000L
+            val key = "${tx.amount}|${tx.currency}|${tx.merchant.trim().lowercase()}|${tx.type}|$timeBucket"
+            val existing = seen[key]
+            if (existing != null) {
+                if (existing.isSynced && !tx.isSynced) {
+                    toDelete.add(tx.id)
+                } else if (!existing.isSynced && tx.isSynced) {
+                    toDelete.add(existing.id)
+                    seen[key] = tx
+                } else {
+                    toDelete.add(tx.id)
+                }
+            } else {
+                seen[key] = tx
+            }
+        }
+
+        if (toDelete.isNotEmpty()) {
+            db.transactionDao().deleteByIds(toDelete)
+        }
     }
 
     private fun parseTimestamp(raw: String?): Long {
         if (raw.isNullOrBlank()) return System.currentTimeMillis()
+        val rawNum = raw.toLongOrNull()
+        if (rawNum != null && rawNum > 0) return rawNum
+
         return try {
             java.time.Instant.parse(raw).toEpochMilli()
         } catch (_: Exception) {
             try {
-                val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).apply {
+                val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSX", java.util.Locale.US).apply {
                     timeZone = java.util.TimeZone.getTimeZone("UTC")
                 }
                 sdf.parse(raw)?.time ?: System.currentTimeMillis()
             } catch (_: Exception) {
-                System.currentTimeMillis()
+                try {
+                    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).apply {
+                        timeZone = java.util.TimeZone.getTimeZone("UTC")
+                    }
+                    sdf.parse(raw)?.time ?: System.currentTimeMillis()
+                } catch (_: Exception) {
+                    System.currentTimeMillis()
+                }
             }
         }
     }

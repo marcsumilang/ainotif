@@ -1,7 +1,7 @@
 import { drizzle, type NeonHttpDatabase } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
 import * as schema from "./schema.js";
-import { eq, desc, and, inArray } from "drizzle-orm";
+import { eq, desc, and, inArray, gte, lte } from "drizzle-orm";
 import crypto from "crypto";
 
 type DrizzleDb = NeonHttpDatabase<typeof schema>;
@@ -80,6 +80,7 @@ export async function ensureUser(id: string, email?: string, displayName?: strin
 }
 
 export async function saveTransaction(data: {
+  id?: string;
   userId: string;
   amount: number;
   currency: string;
@@ -94,24 +95,62 @@ export async function saveTransaction(data: {
 
   const drizzleDb = getDb();
   if (drizzleDb) {
+    // 1. Check if record with this ID already exists
+    if (data.id) {
+      const existingById = await drizzleDb.query.transactions.findFirst({
+        where: eq(schema.transactions.id, data.id),
+      });
+      if (existingById) return existingById;
+    }
+
+    // 2. Check for duplicate by content & timestamp within 5 minutes
+    const fiveMinBefore = new Date(data.timestamp.getTime() - 300000);
+    const fiveMinAfter = new Date(data.timestamp.getTime() + 300000);
+
+    const existingMatch = await drizzleDb.query.transactions.findFirst({
+      where: and(
+        eq(schema.transactions.userId, data.userId),
+        eq(schema.transactions.merchant, data.merchant),
+        eq(schema.transactions.amount, data.amount),
+        gte(schema.transactions.timestamp, fiveMinBefore),
+        lte(schema.transactions.timestamp, fiveMinAfter)
+      ),
+    });
+    if (existingMatch) return existingMatch;
+
+    const insertValues: schema.NewTransaction = {
+      ...(data.id ? { id: data.id } : {}),
+      userId: data.userId,
+      amount: data.amount,
+      currency: data.currency,
+      merchant: data.merchant,
+      category: data.category,
+      type: data.type,
+      rawNotification: data.rawNotification,
+      sourcePackage: data.sourcePackage,
+      timestamp: data.timestamp,
+    };
+
     const [inserted] = await drizzleDb
       .insert(schema.transactions)
-      .values({
-        userId: data.userId,
-        amount: data.amount,
-        currency: data.currency,
-        merchant: data.merchant,
-        category: data.category,
-        type: data.type,
-        rawNotification: data.rawNotification,
-        sourcePackage: data.sourcePackage,
-        timestamp: data.timestamp,
-      })
+      .values(insertValues)
       .returning();
     return inserted;
   } else {
+    if (data.id) {
+      const existing = memoryStore.transactions.find((t) => t.id === data.id);
+      if (existing) return existing;
+    }
+    const existing = memoryStore.transactions.find((t) =>
+      t.userId === data.userId &&
+      t.merchant === data.merchant &&
+      Math.abs(t.amount - data.amount) < 0.001 &&
+      Math.abs(t.timestamp.getTime() - data.timestamp.getTime()) <= 300000
+    );
+    if (existing) return existing;
+
     const item: schema.Transaction = {
-      id: crypto.randomUUID(),
+      id: data.id || crypto.randomUUID(),
       userId: data.userId,
       amount: data.amount,
       currency: data.currency,
@@ -241,6 +280,19 @@ export async function saveAlert(data: {
 
   const drizzleDb = getDb();
   if (drizzleDb) {
+    const fiveMinBefore = new Date(data.timestamp.getTime() - 300000);
+    const fiveMinAfter = new Date(data.timestamp.getTime() + 300000);
+
+    const existingMatch = await drizzleDb.query.suspiciousAlerts.findFirst({
+      where: and(
+        eq(schema.suspiciousAlerts.userId, data.userId),
+        eq(schema.suspiciousAlerts.rawNotification, data.rawNotification),
+        gte(schema.suspiciousAlerts.timestamp, fiveMinBefore),
+        lte(schema.suspiciousAlerts.timestamp, fiveMinAfter)
+      ),
+    });
+    if (existingMatch) return existingMatch;
+
     const [inserted] = await drizzleDb
       .insert(schema.suspiciousAlerts)
       .values({
@@ -256,6 +308,14 @@ export async function saveAlert(data: {
       .returning();
     return inserted;
   } else {
+    const existing = memoryStore.alerts.find(
+      (a) =>
+        a.userId === data.userId &&
+        a.rawNotification === data.rawNotification &&
+        Math.abs(a.timestamp.getTime() - data.timestamp.getTime()) <= 300000
+    );
+    if (existing) return existing;
+
     const item: schema.SuspiciousAlert = {
       id: crypto.randomUUID(),
       userId: data.userId,

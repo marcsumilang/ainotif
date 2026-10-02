@@ -49,7 +49,7 @@ class AiNotificationListenerService : NotificationListenerService() {
         if (sbn == null) return
 
         serviceScope.launch {
-            processStatusBarNotification(sbn, skipIfDuplicate = false)
+            processStatusBarNotification(sbn, skipIfDuplicate = true)
         }
     }
 
@@ -92,6 +92,19 @@ class AiNotificationListenerService : NotificationListenerService() {
             ?: extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
 
         if (text.isNullOrBlank()) return false
+
+        // In-memory debouncer to prevent rapid duplicate events (10 second TTL)
+        val debounceKey = "$pkgName|$title|$text"
+        val now = System.currentTimeMillis()
+        val lastSeen = recentNotificationTimestamps[debounceKey]
+        if (lastSeen != null && now - lastSeen < 10000L) {
+            Log.d(TAG, "Debounced duplicate notification event from $pkgName within 10s")
+            return false
+        }
+        recentNotificationTimestamps[debounceKey] = now
+        if (recentNotificationTimestamps.size > 100) {
+            recentNotificationTimestamps.entries.removeIf { now - it.value > 60000L }
+        }
 
         return try {
             val repository = app.repository
@@ -285,6 +298,7 @@ class AiNotificationListenerService : NotificationListenerService() {
 
     companion object {
         private const val TAG = "AiNotifListener"
+        private val recentNotificationTimestamps = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
         @Volatile
         var instance: AiNotificationListenerService? = null

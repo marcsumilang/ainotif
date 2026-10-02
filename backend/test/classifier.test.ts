@@ -110,6 +110,53 @@ Hope this helps!`;
     console.log("Test 6 Passed: Raw JSON response parsed & validated.");
   }
 
+  // Test 7: GCash to GrabFood
+  {
+    const input = "GCash: You have paid PHP 550.00 to GrabFood via GCash. Ref: 1029381. Your new balance is PHP 1,200.00";
+    const res = fallbackHeuristicClassifier(input, "com.google.android.apps.messaging");
+    assert.strictEqual(res.classification, "TRANSACTION");
+    assert.ok(res.transaction);
+    assert.strictEqual(res.transaction.merchant, "GrabFood");
+    assert.strictEqual(res.transaction.category, "Food & Dining");
+    assert.strictEqual(res.transaction.amount, 550);
+    assert.strictEqual(res.transaction.currency, "PHP");
+    console.log("Test 7 Passed: GCash to GrabFood parsed accurately.");
+  }
+
+  // Test 8: GCash P2P Transfer strips phone number
+  {
+    const input = "GCash: You have sent PHP 500.00 of GCash to JUAN DELA CRUZ 09171234567 on 10/02. Ref: 991823";
+    const res = fallbackHeuristicClassifier(input, "com.google.android.apps.messaging");
+    assert.strictEqual(res.classification, "TRANSACTION");
+    assert.ok(res.transaction);
+    assert.strictEqual(res.transaction.merchant, "Juan Dela Cruz");
+    assert.strictEqual(res.transaction.category, "Transfers");
+    assert.strictEqual(res.transaction.type, "TRANSFER");
+    console.log("Test 8 Passed: GCash P2P Transfer stripped phone number and categorized as Transfers.");
+  }
+
+  // Test 9: Health & Fitness Category
+  {
+    const input = "BPI: Debit from 1234 for PHP 650.00 at MERCURY DRUG on 10/02.";
+    const res = fallbackHeuristicClassifier(input, "com.google.android.apps.messaging");
+    assert.strictEqual(res.classification, "TRANSACTION");
+    assert.ok(res.transaction);
+    assert.strictEqual(res.transaction.merchant, "Mercury Drug");
+    assert.strictEqual(res.transaction.category, "Health & Fitness");
+    console.log("Test 9 Passed: Mercury Drug categorized as Health & Fitness with clean merchant.");
+  }
+
+  // Test 10: Special characters & Gateway prefix stripping
+  {
+    const input = "Chase: You spent $14.50 at SQ *BLUE BOTTLE COFFEE on card 8812.";
+    const res = fallbackHeuristicClassifier(input, "com.chase.sig.android");
+    assert.strictEqual(res.classification, "TRANSACTION");
+    assert.ok(res.transaction);
+    assert.strictEqual(res.transaction.merchant, "Blue Bottle Coffee");
+    assert.strictEqual(res.transaction.category, "Food & Dining");
+    console.log("Test 10 Passed: Gateway prefix SQ * stripped and title-cased.");
+  }
+
   console.log("\nAll backend classifier tests PASSED successfully!");
 }
 

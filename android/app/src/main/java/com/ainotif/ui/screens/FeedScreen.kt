@@ -56,21 +56,29 @@ fun FeedScreen(
     var editingTransaction by remember { mutableStateOf<TransactionEntity?>(null) }
     var showDeleteConfirmDialog by remember { mutableStateOf<TransactionEntity?>(null) }
 
+    // Defensive UI deduplication: remove exact duplicate rows if any exist in the database
+    val distinctTransactions = remember(transactions) {
+        transactions.distinctBy { tx ->
+            val timeBucket = tx.timestamp / 300000L
+            "${tx.amount}|${tx.currency}|${tx.merchant.trim().lowercase()}|${tx.type}|$timeBucket"
+        }
+    }
+
     // Multi-currency normalized totals in user's base currency
-    val totalDebit = remember(transactions, baseCurrency) {
-        transactions.filter { it.type == "DEBIT" }.sumOf {
+    val totalDebit = remember(distinctTransactions, baseCurrency) {
+        distinctTransactions.filter { it.type == "DEBIT" }.sumOf {
             CurrencyConverter.convert(it.amount, it.currency, baseCurrency)
         }
     }
-    val totalCredit = remember(transactions, baseCurrency) {
-        transactions.filter { it.type == "CREDIT" }.sumOf {
+    val totalCredit = remember(distinctTransactions, baseCurrency) {
+        distinctTransactions.filter { it.type == "CREDIT" }.sumOf {
             CurrencyConverter.convert(it.amount, it.currency, baseCurrency)
         }
     }
 
     // Filtered transaction list
-    val filteredTransactions = remember(transactions, searchQuery, selectedTypeFilter, selectedCategoryFilter) {
-        transactions.filter { tx ->
+    val filteredTransactions = remember(distinctTransactions, searchQuery, selectedTypeFilter, selectedCategoryFilter) {
+        distinctTransactions.filter { tx ->
             val matchesType = when (selectedTypeFilter) {
                 "DEBIT" -> tx.type == "DEBIT"
                 "CREDIT" -> tx.type == "CREDIT"
@@ -511,6 +519,7 @@ fun TransactionItemCard(
                         "Transport & Travel" -> Icons.Default.DirectionsCar
                         "Entertainment" -> Icons.Default.Movie
                         "Bills & Utilities" -> Icons.Default.Receipt
+                        "Health & Fitness" -> Icons.Default.FitnessCenter
                         "Transfers" -> Icons.Default.SwapHoriz
                         "Income" -> Icons.Default.Payments
                         else -> Icons.Default.AttachMoney

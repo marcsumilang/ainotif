@@ -124,7 +124,7 @@ Tasks:
    - amount (numeric positive float)
    - currency (3-letter ISO like USD, EUR, GBP, PHP, etc.)
    - merchant name (cleaned, e.g. "Starbucks", "Amazon", "Trader Joe's", "Uber")
-   - category (one of: "Food & Dining", "Groceries", "Shopping", "Transport & Travel", "Bills & Utilities", "Entertainment", "Health", "Transfers", "Income", "General")
+   - category (one of: "Food & Dining", "Groceries", "Shopping", "Transport & Travel", "Bills & Utilities", "Entertainment", "Health & Fitness", "Transfers", "Income", "General")
    - type ("DEBIT", "CREDIT", or "TRANSFER")
 3. If it is neither (e.g. chat, marketing, system alert, or already dropped OTP), classify as "IRRELEVANT".
 
@@ -152,7 +152,7 @@ Respond ONLY with valid JSON conforming to this schema:
         messages: [
           {
             role: "system",
-            content: "You are a cybersecurity and banking notification analyzer. Analyze notifications and respond ONLY with valid JSON conforming strictly to the requested schema.",
+            content: "You are a cybersecurity and banking notification analyzer. Analyze notifications and respond ONLY with valid JSON conforming strictly to the requested schema. Return clean merchant names without gateway prefixes or payment channel noise.",
           },
           {
             role: "user",
@@ -176,6 +176,233 @@ Respond ONLY with valid JSON conforming to this schema:
 
   // Heuristic rule-based fallback analyzer (Zero external latency / offline safe)
   return fallbackHeuristicClassifier(fullText, payload.packageName);
+}
+
+const GENERIC_TITLES = new Set([
+  "sms", "messages", "bank", "chase", "bpi", "bdo", "gcash", "maya", "citi", "wells fargo",
+  "capital one", "amex", "revolut", "google auth", "alert", "notification", "security alert",
+  "banking push", "bank alert", "metrobank", "unionbank", "rcbc", "apple card", "apple pay",
+  "google pay", "samsung pay", "apple wallet", "google wallet", "wallet"
+]);
+
+const KNOWN_PACKAGES: Record<string, string> = {
+  "com.starbucks.mobilecard": "Starbucks",
+  "com.grabtaxi.passenger": "Grab",
+  "com.ubercab": "Uber",
+  "com.netflix.ninja": "Netflix",
+  "com.netflix.mediaclient": "Netflix",
+  "com.spotify.music": "Spotify",
+  "com.amazon.mShop.android.shopping": "Amazon",
+  "com.shopee.ph": "Shopee",
+  "com.lazada.android": "Lazada",
+  "com.mcdonalds.app": "McDonald's",
+  "com.walmart.android": "Walmart",
+  "com.target.ui": "Target",
+};
+
+const ACRONYMS = new Set(["SM", "BDO", "BPI", "CVS", "ATM", "PLDT", "AT&T", "USA", "NYC", "HK", "UK", "IBM", "PH", "PG&E", "DLI", "KFC", "BBQ"]);
+
+function cleanMerchantName(raw: String): string {
+  let clean = raw.trim();
+  clean = clean.replace(/^(?:the|a)\s+/i, "");
+
+  // Handle Uber and Grab sub-brands cleanly
+  if (/^uber/i.test(clean)) {
+    return /eats/i.test(clean) ? "Uber Eats" : "Uber";
+  }
+  if (/^grab/i.test(clean)) {
+    return /food/i.test(clean) ? "GrabFood" : /car/i.test(clean) ? "GrabCar" : "Grab";
+  }
+
+  // Strip payment gateway / card aggregator prefixes
+  clean = clean.replace(
+    /^(?:SQ\s*\*|SQUARE\s*\*|TST\s*\*|TOAST\s*\*|PAYPAL\s*\*|SP\s*\*|SHOPIFY\s*\*|AMZN\s*\*|AMAZON\s*\*|APL\s*\*|APPLE\s*\*|GOOGLE\s*\*|MSFT\s*\*|MICROSOFT\s*\*)\s*/i,
+    ""
+  );
+
+  // Strip trailing channels & noise
+  clean = clean.replace(
+    /\s+(?:using\s+[\w\s]+|via\s+[\w\s]+|with\s+(?:account|acct|card|message|ref).*|ref\s*#?.*)$/i,
+    ""
+  );
+
+  // Strip trailing phone numbers
+  clean = clean.replace(/\s+(?:09\d{9}|\+?63\d{10}|\d{10,12})$/, "");
+
+  // Strip store numbers / branch tags
+  clean = clean.replace(/\s+(?:store|branch)?\s*#\d+/i, "");
+
+  // Strip domain extensions
+  clean = clean.replace(/(?:\.com|\.ph|\.org|\.net|\.io|\.co)$/i, "");
+
+  clean = clean.trim().replace(/[,.\-;]+$/, "");
+
+  // Apply proper Title Casing if all uppercase
+  if (clean.length > 2 && clean.toUpperCase() === clean && !clean.includes(".")) {
+    clean = clean.split(" ").map((word) => {
+      if (ACRONYMS.has(word.toUpperCase())) {
+        return word.toUpperCase();
+      }
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    }).join(" ");
+  }
+
+  return clean || "Bank Merchant";
+}
+
+function isValidMerchantCandidate(candidate: string): boolean {
+  if (!candidate || candidate.trim().length === 0) return false;
+  if (candidate.toLowerCase() === "a" || candidate.toLowerCase() === "the") return false;
+  if (/^\d+$/.test(candidate)) return false;
+  if (/^(?:card|acct|account)?\s*\d+$/i.test(candidate)) return false;
+  return true;
+}
+
+export function extractCleanMerchant(text: string, packageName?: string): string {
+  // 1. Text pattern extraction prioritized: 'at' first, then 'to', then 'from'
+  const patterns = [
+    /\bat\s+([A-Za-z0-9&'*+./#\s-]+?)(?:\s+(?:(?:was|is|has)\s+(?:successful|completed|authorized|approved|posted|declined|made)|on\s+\d|on\s+card|for\s+(?:order|purchase|PHP|USD|EUR|GBP|₱|\$|€|£|\d)|using|via|with\s+(?:account|acct|card|ref|msg)|ref|card|ending|acct|account|trace|trans|txn|avail|balance|approved|\.|\$|PHP|USD|EUR|GBP|₱|€|£)|$)/i,
+    /(?:bill to|payment to|paid to|sent to|charge at|charged at)\s+([A-Za-z0-9&'*+./#\s-]+?)(?:\s+(?:(?:was|is|has)\s+(?:successful|completed|authorized|approved|posted|declined|made)|using|via|with|on\s+\d|on\s+card|ref|card|ending|acct|account|balance)|$)/i,
+    /\bto\s+([A-Za-z0-9&'*+./#\s-]+?)(?:\s+(?:(?:was|is|has)\s+(?:successful|completed|authorized|approved|posted|declined|made)|on\s+\d|on\s+card|for\s+(?:order|purchase|PHP|USD|EUR|GBP|₱|\$|€|£|\d)|using|via|with\s+(?:account|acct|card|ref|msg)|ref|card|ending|acct|account|trace|trans|txn|avail|balance|approved|\.|\$|PHP|USD|EUR|GBP|₱|€|£)|$)/i,
+    /(?:direct deposit|deposit|payroll)\s+of\s+[^f]+from\s+([A-Za-z0-9&'*+./#\s-]+?)(?:\s+(?:has|ref|into|to|\.|$))/i,
+    /\bfrom\s+([A-Za-z0-9&'*+./#\s-]+?)(?:\s+(?:(?:was|is|has)\s+(?:successful|completed|authorized|approved|posted|declined|made)|on\s+\d|on\s+card|for\s+|has|ref|into|to|\.|$))/i,
+    /bought\s+[^o]+of\s+([A-Za-z0-9\s-]+load)/i,
+  ];
+
+  for (const regex of patterns) {
+    const match = text.match(regex);
+    if (match && match[1]) {
+      const candidate = cleanMerchantName(match[1]);
+      if (isValidMerchantCandidate(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  // 2. Known package lookup
+  if (packageName && KNOWN_PACKAGES[packageName]) {
+    return KNOWN_PACKAGES[packageName];
+  }
+
+  // 3. Check if text begins with a merchant prefix (e.g. "Starbucks: ...", "Netflix: ...")
+  const prefixMatch = text.match(/^([A-Za-z0-9\s&'.-]{2,30}):/);
+  if (prefixMatch && prefixMatch[1]) {
+    const pLower = prefixMatch[1].trim().toLowerCase();
+    if (!GENERIC_TITLES.has(pLower) && !pLower.startsWith("sms")) {
+      const candidate = cleanMerchantName(prefixMatch[1]);
+      if (isValidMerchantCandidate(candidate)) {
+        return candidate;
+      }
+    }
+  }
+
+  return "Bank Merchant";
+}
+
+function containsAny(text: string, keywords: string[]): boolean {
+  return keywords.some((k) => text.includes(k));
+}
+
+export function deduceCategory(merchant: string, lower: string, type: "DEBIT" | "CREDIT" | "TRANSFER"): string {
+  const combined = `${merchant.toLowerCase()} ${lower}`;
+
+  // 1. Food & Dining
+  if (containsAny(combined, [
+    "starbucks", "mcdonald", "mcdo", "jollibee", "kfc", "burger king", "burger", "wendy",
+    "subway", "pizza", "domino", "pizza hut", "dunkin", "tim horton", "chipotle", "taco bell",
+    "shake shack", "sweetgreen", "panera", "grabfood", "foodpanda", "doordash", "uber eats",
+    "postmates", "deliveroo", "mang inasal", "chowking", "bonchon", "max's", "restaurant",
+    "cafe", "coffee", "dining", "bistro", "diner", "grill", "bar", "pub", "bakery", "ramen",
+    "sushi", "noodle", "boba", "tea", "breakfast", "lunch", "dinner", "eats", "pastry", "pret a manger"
+  ])) {
+    return "Food & Dining";
+  }
+
+  // 2. Groceries
+  if (containsAny(combined, [
+    "trader joe", "whole foods", "walmart", "kroger", "safeway", "aldi", "costco", "heb",
+    "h-e-b", "publix", "sprouts", "wegmans", "sm supermarket", "sm hypermarket", "puregold",
+    "robinsons supermarket", "dali", "alfamart", "7-eleven", "7 eleven", "lawson", "familymart",
+    "circle k", "wawa", "grocery", "groceries", "supermarket", "super market", "convenience store",
+    "produce", "butcher", "bodega"
+  ])) {
+    return "Groceries";
+  }
+
+  // 3. Health & Fitness
+  if (containsAny(combined, [
+    "mercury drug", "watsons", "cvs", "walgreens", "boots", "rite aid", "pharmacy",
+    "drugstore", "medicine", "hospital", "clinic", "dental", "dentist", "optometry",
+    "vision", "eyewear", "doctor", "medical", "health", "fitness", "gym", "workout",
+    "anytime fitness", "gold's gym", "planet fitness", "equinox", "yoga", "wellness",
+    "lab", "diagnostics"
+  ])) {
+    return "Health & Fitness";
+  }
+
+  // 4. Transport & Travel
+  if (containsAny(combined, [
+    "uber", "lyft", "grab", "grabcar", "angkas", "joyride", "taxi", "cab", "transit",
+    "metro", "subway", "train", "bus", "amtrak", "rail", "parking", "toll", "expressway",
+    "ezpass", "shell", "chevron", "exxon", "mobil", "bp", "texaco", "petron", "caltex",
+    "total", "fuel", "gas station", "airline", "flight", "delta", "united", "american airlines",
+    "southwest", "airasia", "cebu pacific", "philippine airlines", "emirates", "hotel", "airbnb",
+    "booking.com", "expedia", "agoda", "travel", "car rental", "hertz", "enterprise", "avis"
+  ])) {
+    return "Transport & Travel";
+  }
+
+  // 5. Entertainment
+  if (containsAny(combined, [
+    "netflix", "spotify", "youtube", "disney", "hulu", "hbo", "max", "paramount", "apple tv",
+    "prime video", "steam", "playstation", "sony", "xbox", "nintendo", "twitch", "cinema",
+    "movie", "theater", "theatre", "amc", "regal", "concert", "ticketmaster", "eventbrite",
+    "audible", "kindle", "gaming", "game"
+  ])) {
+    return "Entertainment";
+  }
+
+  // 6. Shopping
+  if (containsAny(combined, [
+    "amazon", "amzn", "apple store", "target", "best buy", "home depot", "lowe's", "lowes",
+    "ebay", "shopee", "lazada", "zalora", "shein", "temu", "aliexpress", "etsy", "nike",
+    "adidas", "zara", "h&m", "uniqlo", "ikea", "sephora", "ulta", "sm store", "department store",
+    "mall", "boutique", "clothing", "apparel", "shoes", "retail", "shop", "store"
+  ])) {
+    return "Shopping";
+  }
+
+  // 7. Bills & Utilities
+  if (containsAny(combined, [
+    "meralco", "manila water", "maynilad", "pg&e", "pacific gas", "con edison", "duke energy",
+    "electric", "power", "water", "utility", "utilities", "pldt", "globe", "smart", "dito",
+    "converge", "at&t", "verizon", "t-mobile", "sprint", "comcast", "xfinity", "spectrum",
+    "broadband", "internet", "wifi", "telecom", "phone bill", "bill", "mobile load",
+    "prepaid load", "regular load", "insurance", "geico", "progressive", "allstate",
+    "state farm", "rent", "mortgage", "dues", "aws", "google cloud", "azure", "openai",
+    "chatgpt", "github", "icloud", "dropbox"
+  ])) {
+    return "Bills & Utilities";
+  }
+
+  // 8. Transfers
+  if (type === "TRANSFER" || containsAny(combined, [
+    "transfer", "transferred", "sent to", "wire", "remittance", "cash in", "cash out",
+    "atm withdrawal", "atm", "bank transfer", "wire transfer", "instapay", "pesonet",
+    "zelle", "venmo", "cash app", "western union", "moneygram", "express send", "savings vault"
+  ])) {
+    return "Transfers";
+  }
+
+  // 9. Income
+  if (type === "CREDIT" || containsAny(combined, [
+    "salary", "payroll", "paycheck", "direct deposit", "employer", "compensation", "bonus",
+    "stipend", "dividend", "interest earned", "payout", "refund", "refunded", "reimbursement", "cashback"
+  ])) {
+    return "Income";
+  }
+
+  return "General";
 }
 
 /**
@@ -271,7 +498,7 @@ export function fallbackHeuristicClassifier(text: string, packageName?: string):
 
   const transactionKeywords = [
     "spent", "charged", "debited", "paid", "purchase", "withdrawal",
-    "received", "credited", "refunded", "transferred", "sent to", "received from", "payment to"
+    "received", "credited", "refunded", "transferred", "sent to", "received from", "payment to", "direct deposit"
   ];
   const hasTransactionKeyword = transactionKeywords.some((k) => lower.includes(k));
 
@@ -296,42 +523,17 @@ export function fallbackHeuristicClassifier(text: string, packageName?: string):
 
     // Determine type (DEBIT vs CREDIT vs TRANSFER)
     let type: "DEBIT" | "CREDIT" | "TRANSFER" = "DEBIT";
-    if (lower.includes("received") || lower.includes("credited") || lower.includes("refunded") || lower.includes("deposited")) {
+    if (lower.includes("received") || lower.includes("credited") || lower.includes("refunded") || lower.includes("deposited") || lower.includes("direct deposit")) {
       type = "CREDIT";
-    } else if (lower.includes("transferred") || lower.includes("sent to") || lower.includes("transfer to")) {
+    } else if (/\b(?:transferred|transfer\s+to|transfer\b|sent\b.*?\bto|send\s+money|cash\s+out|cash\s+in|p2p|express\s+send)\b/i.test(lower)) {
       type = "TRANSFER";
     }
 
     // Extract merchant
-    let merchant = "Bank Merchant";
-    const atMatch = text.match(/(?:at|to|from)\s+([A-Za-z0-9\s'.-]+?)(?:\s+on|\s+for|\s+ref|\s+card|\.|$)/i);
-    if (atMatch && atMatch[1]) {
-      merchant = atMatch[1].trim().replace(/^the\s+/i, "");
-    } else if (packageName) {
-      const parts = packageName.split(".");
-      merchant = parts[parts.length - 1].toUpperCase();
-    }
+    const merchant = extractCleanMerchant(text, packageName);
 
     // Deduce Category
-    let category = "General";
-    const mLower = merchant.toLowerCase() + " " + lower;
-    if (mLower.includes("starbucks") || mLower.includes("mcdonald") || mLower.includes("coffee") || mLower.includes("restaurant") || mLower.includes("cafe") || mLower.includes("burger")) {
-      category = "Food & Dining";
-    } else if (mLower.includes("trader joe") || mLower.includes("walmart") || mLower.includes("grocery") || mLower.includes("supermarket") || mLower.includes("whole foods")) {
-      category = "Groceries";
-    } else if (mLower.includes("uber") || mLower.includes("lyft") || mLower.includes("airline") || mLower.includes("flight") || mLower.includes("gas") || mLower.includes("shell") || mLower.includes("chevron")) {
-      category = "Transport & Travel";
-    } else if (mLower.includes("netflix") || mLower.includes("spotify") || mLower.includes("steam") || mLower.includes("cinema") || mLower.includes("disney")) {
-      category = "Entertainment";
-    } else if (mLower.includes("amazon") || mLower.includes("apple") || mLower.includes("target") || mLower.includes("store") || mLower.includes("shop")) {
-      category = "Shopping";
-    } else if (mLower.includes("electric") || mLower.includes("water") || mLower.includes("internet") || mLower.includes("mobile") || mLower.includes("bill") || mLower.includes("telecom")) {
-      category = "Bills & Utilities";
-    } else if (type === "TRANSFER") {
-      category = "Transfers";
-    } else if (type === "CREDIT") {
-      category = "Income";
-    }
+    const category = deduceCategory(merchant, lower, type);
 
     if (amount > 0) {
       return {
