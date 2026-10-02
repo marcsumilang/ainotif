@@ -1,20 +1,19 @@
 import { Hono } from "hono";
-import { z } from "zod";
-import { classifyNotification } from "../ai/classifier.js";
-import { saveTransaction, saveAlert } from "../db/index.js";
+import { classifyNotification, ProcessNotificationSchema } from "../ai/classifier.js";
+import { saveTransaction, saveAlert, saveNotificationAnalysis, getNotificationReviews } from "../db/index.js";
 
 export const notificationsRouter = new Hono();
 
-const ProcessNotificationSchema = z.object({
-  text: z.string().min(1, "Notification text is required"),
-  title: z.string().optional(),
-  packageName: z.string().optional(),
-  timestamp: z.number().optional(), // epoch ms
+notificationsRouter.get("/notification-reviews", async (c) => {
+  const userId = c.get("auth")?.userId;
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
+  return c.json({ reviews: await getNotificationReviews(userId) });
 });
 
 notificationsRouter.post("/process-notification", async (c) => {
   const auth = c.get("auth");
-  const userId = auth?.userId || "user_demo_dev";
+  const userId = auth?.userId;
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
 
   let body: unknown;
   try {
@@ -32,16 +31,12 @@ notificationsRouter.post("/process-notification", async (c) => {
   const postTime = timestamp ? new Date(timestamp) : new Date();
 
   // Run AI / Heuristic Classification
-  const analysis = await classifyNotification({
-    text,
-    title,
-    packageName,
-    timestamp,
-  });
+  const analysis = await classifyNotification(parseResult.data);
+  const analysisRecordId = await saveNotificationAnalysis(userId, parseResult.data, analysis);
 
   let savedRecordId: string | null = null;
 
-  if (analysis.classification === "SCAM_PHISHING") {
+  if (analysis.decision.warn) {
     const alert = await saveAlert({
       userId,
       rawNotification: `${title ? title + " - " : ""}${text}`,
@@ -52,7 +47,7 @@ notificationsRouter.post("/process-notification", async (c) => {
       timestamp: postTime,
     });
     savedRecordId = alert.id;
-  } else if (analysis.classification === "TRANSACTION" && analysis.transaction) {
+  } else if (analysis.decision.saveTransaction && analysis.transaction) {
     const tx = await saveTransaction({
       userId,
       amount: analysis.transaction.amount,
@@ -70,6 +65,7 @@ notificationsRouter.post("/process-notification", async (c) => {
   return c.json({
     success: true,
     savedRecordId,
+    analysisRecordId,
     analysis,
   });
 });

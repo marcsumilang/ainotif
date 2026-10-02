@@ -1,17 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
-import { classifyNotification } from "@/lib/classifier";
-import { saveTransaction, saveAlert, getUserPlan, incrementNotificationCount } from "@/lib/db";
+import { classifyNotification, isSensitiveOtp } from "@/lib/classifier";
+import { ProcessNotificationSchema } from "../../../../../backend/src/ai/classifier";
+import { saveTransaction, saveAlert, getUserPlan, incrementNotificationCount, saveNotificationAnalysis } from "@/lib/db";
 import { eventBus } from "@/lib/events";
 import { getAuthenticatedUser } from "@/lib/auth";
-
-const ProcessNotificationSchema = z.object({
-  text: z.string().min(1, "Notification text is required"),
-  title: z.string().optional(),
-  packageName: z.string().optional(),
-  timestamp: z.number().optional(),
-  userId: z.string().optional(),
-});
 
 export async function POST(req: NextRequest) {
   const auth = await getAuthenticatedUser(req);
@@ -26,9 +18,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Validation error", issues: parseResult.error.issues }, { status: 400 });
     }
 
-    const { text, title, packageName, timestamp, userId } = parseResult.data;
-    const finalUserId = userId || auth.userId;
+    const { text, title, packageName, timestamp } = parseResult.data;
+    const finalUserId = auth.userId;
     const postTime = timestamp ? new Date(timestamp) : new Date();
+
+    // Sensitive inputs are dropped even when the account has reached its quota.
+    if (isSensitiveOtp(`${title ?? ""} ${text}`)) {
+      const analysis = await classifyNotification(parseResult.data);
+      return NextResponse.json({ success: true, savedRecordId: null, analysisRecordId: null, analysis });
+    }
 
     // Check Plan & Quota limits
     const userPlanInfo = await getUserPlan(finalUserId);
@@ -49,19 +47,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const analysis = await classifyNotification({
-      text,
-      title,
-      packageName,
-      timestamp,
-    });
+    const analysis = await classifyNotification(parseResult.data);
+    const analysisRecordId = await saveNotificationAnalysis(finalUserId, parseResult.data, analysis);
 
     // Increment notification usage counter
-    const currentCount = await incrementNotificationCount(finalUserId);
+    await incrementNotificationCount(finalUserId);
 
     let savedRecordId: string | null = null;
 
-    if (analysis.classification === "SCAM_PHISHING") {
+    if (analysis.decision.warn) {
       const alert = await saveAlert({
         userId: finalUserId,
         rawNotification: `${title ? title + " - " : ""}${text}`,
@@ -73,7 +67,7 @@ export async function POST(req: NextRequest) {
       });
       savedRecordId = alert.id;
       eventBus.emit("alert_created", { alert, userId: finalUserId });
-    } else if (analysis.classification === "TRANSACTION" && analysis.transaction) {
+    } else if (analysis.decision.saveTransaction && analysis.transaction) {
       const tx = await saveTransaction({
         userId: finalUserId,
         amount: analysis.transaction.amount,
@@ -92,9 +86,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       savedRecordId,
+      analysisRecordId,
       analysis,
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message || "Failed to process notification" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to process notification" }, { status: 500 });
   }
 }

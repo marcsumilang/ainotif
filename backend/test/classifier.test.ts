@@ -1,119 +1,150 @@
-import assert from "node:assert";
-import { fallbackHeuristicClassifier, ClassificationResultSchema, extractJsonPayload } from "../src/ai/classifier.js";
+import assert from "node:assert/strict";
+import {
+  classifyNotification, fallbackHeuristicClassifier, ClassificationResultSchema,
+  buildJevRequest, composeJevResult, extractAmountCandidates, parseUrlFacts, hostnameMatches,
+  ProcessNotificationSchema,
+} from "../src/ai/classifier.js";
+import { classifyNotification as webClassify } from "../../web/src/lib/classifier.js";
+import { jevFixture } from "./jev-fixture.js";
 
-async function runTests() {
-  console.log("--- AiNotif AI Classifier Test Suite ---");
-
-  // Test 1: Standard Bank Spend Notification
-  {
-    const input = "Chase: You spent $42.50 at Trader Joe's on 09/27. Remaining balance: $1,240.10";
-    const res = fallbackHeuristicClassifier(input, "com.chase.sig.android");
-    console.log("Test 1 Result:", res);
-
-    assert.strictEqual(res.classification, "TRANSACTION");
-    assert.strictEqual(res.isScamOrPhishing, false);
-    assert.ok(res.transaction);
-    assert.strictEqual(res.transaction.amount, 42.5);
-    assert.strictEqual(res.transaction.currency, "USD");
-    assert.strictEqual(res.transaction.type, "DEBIT");
-    assert.strictEqual(res.transaction.category, "Groceries");
-    assert.ok(ClassificationResultSchema.safeParse(res).success);
-    console.log("Test 1 Passed: Chase Grocery spend detected.");
-  }
-
-  // Test 2: Coffee Shop / Dining
-  {
-    const input = "Revolut: Paid €4.80 at Starbucks Coffee Amsterdam";
-    const res = fallbackHeuristicClassifier(input, "com.revolut.revolut");
-    console.log("Test 2 Result:", res);
-
-    assert.strictEqual(res.classification, "TRANSACTION");
-    assert.ok(res.transaction);
-    assert.strictEqual(res.transaction.amount, 4.8);
-    assert.strictEqual(res.transaction.currency, "EUR");
-    assert.strictEqual(res.transaction.category, "Food & Dining");
-    assert.ok(ClassificationResultSchema.safeParse(res).success);
-    console.log("Test 2 Passed: Revolut Dining spend detected.");
-  }
-
-  // Test 3: Phishing / Urgent Scam Attempt
-  {
-    const scamInput = "SECURITY ALERT: Your Chase account is suspended immediately! Click http://bit.ly/bank-verify-now to confirm your details or card will be deactivated.";
-    const res = fallbackHeuristicClassifier(scamInput, "com.android.mms");
-    console.log("Test 3 Result:", res);
-
-    assert.strictEqual(res.classification, "SCAM_PHISHING");
-    assert.strictEqual(res.isScamOrPhishing, true);
-    assert.ok(res.riskScore >= 70, `Risk score should be >= 70, got ${res.riskScore}`);
-    assert.ok(res.scamIndicators.length >= 2, "Expected multiple phishing cues");
-    assert.ok(ClassificationResultSchema.safeParse(res).success);
-    console.log("Test 3 Passed: Phishing SMS correctly intercepted with high risk score.");
-  }
-
-  // Test 4: Irrelevant Notification (e.g. Chat or System notification)
-  {
-    const chatInput = "Alice: Hey, are we still meeting for lunch at 1pm?";
-    const res = fallbackHeuristicClassifier(chatInput, "com.whatsapp");
-    console.log("Test 4 Result:", res);
-
-    assert.strictEqual(res.classification, "IRRELEVANT");
-    assert.strictEqual(res.isScamOrPhishing, false);
-    assert.strictEqual(res.transaction, null);
-    assert.ok(ClassificationResultSchema.safeParse(res).success);
-    console.log("Test 4 Passed: Irrelevant chat message bypassed.");
-  }
-
-  // Test 5: OpenRouter Markdown-wrapped JSON response extraction
-  {
-    const markdownResponse = `Here is the analysis:
-\`\`\`json
-{
-  "classification": "TRANSACTION",
-  "isScamOrPhishing": false,
-  "riskScore": 0,
-  "scamReason": null,
-  "scamIndicators": [],
-  "transaction": {
-    "amount": 19.99,
-    "currency": "USD",
-    "merchant": "Netflix",
-    "category": "Entertainment",
-    "type": "DEBIT"
-  },
-  "confidence": 0.98,
-  "explanation": "Recurring subscription payment to Netflix."
+let passed = 0;
+async function test(name: string, run: () => void | Promise<void>) {
+  await run(); passed++; console.log(`PASS ${name}`);
 }
-\`\`\`
-Hope this helps!`;
-
-    const extracted = extractJsonPayload(markdownResponse);
-    const parsed = ClassificationResultSchema.safeParse(extracted);
-    assert.ok(parsed.success);
-    if (parsed.success) {
-      assert.strictEqual(parsed.data.classification, "TRANSACTION");
-      assert.strictEqual(parsed.data.transaction?.merchant, "Netflix");
-      assert.strictEqual(parsed.data.transaction?.amount, 19.99);
-    }
-    console.log("Test 5 Passed: Markdown-wrapped OpenRouter JSON response parsed & validated.");
+await test("backend and web return the same contract", async () => {
+  for (const text of ["Paid PHP 1,250.00 at SM", "Your OTP is 123456. Paid $50", "Security alert: Open the Chase app."]) {
+    assert.deepEqual(await webClassify({ text }, { apiKey: "" }), await classifyNotification({ text }, { apiKey: "" }));
   }
-
-  // Test 6: OpenRouter Raw JSON response extraction
-  {
-    const rawJsonResponse = `{"classification":"SCAM_PHISHING","isScamOrPhishing":true,"riskScore":95,"scamReason":"Phishing link detected","scamIndicators":["Suspicious URL"],"transaction":null,"confidence":0.99,"explanation":"Urgent lock message with deceptive link."}`;
-    const extracted = extractJsonPayload(rawJsonResponse);
-    const parsed = ClassificationResultSchema.safeParse(extracted);
-    assert.ok(parsed.success);
-    if (parsed.success) {
-      assert.strictEqual(parsed.data.classification, "SCAM_PHISHING");
-      assert.strictEqual(parsed.data.riskScore, 95);
-    }
-    console.log("Test 6 Passed: Raw JSON response parsed & validated.");
-  }
-
-  console.log("\nAll backend classifier tests PASSED successfully!");
-}
-
-runTests().catch((err) => {
-  console.error("Test failed:", err);
-  process.exit(1);
 });
+await test("balance first: copy the selected purchase span", () => {
+  const p = { text: "Balance $1,240.10. You spent $42.50 at Trader Joe's on 09/27." };
+  const request = buildJevRequest(p);
+  assert.deepEqual(request.state.amounts.map((c) => c.amount), [1240.1, 42.5]);
+  const r = composeJevResult(p, jevFixture(p, { amount: "amount_1", category: "Groceries" }));
+  assert.equal(r.transaction?.amount, 42.5); assert.equal(r.transaction?.merchant, "Trader Joe's");
+  assert.equal(r.decision.saveTransaction, true); assert.equal(r.decision.hideNotification, false);
+});
+await test("PHP, euros, suffixes and source offsets", () => {
+  for (const [text, currency, amount] of [["Paid PHP 1,250.00 at SM", "PHP", 1250], ["Paid €4.80 at Starbucks", "EUR", 4.8], ["Received 500 PHP from Ana", "PHP", 500], ["Paid CAD 12.50 at Shop", "CAD", 12.5]] as const) {
+    const p = { text }; const r = composeJevResult(p, jevFixture(p));
+    assert.equal(r.transaction?.currency, currency); assert.equal(r.transaction?.amount, amount);
+    const candidate = buildJevRequest(p).state.amounts[0];
+    assert.equal(text.slice(candidate.start, candidate.end), candidate.span);
+  }
+});
+await test("promotions, balances, declined and pending messages don't save", () => {
+  for (const text of ["Get $50 cashback when you sign up", "Available balance $500", "Your $50 payment was declined", "Pending payment $50"]) {
+    const p = { text }; const r = composeJevResult(p, jevFixture(p, { completed: 0.01 }));
+    assert.equal(r.transaction, null); assert.equal(r.decision.saveTransaction, false);
+    assert.equal(fallbackHeuristicClassifier(text).decision.saveTransaction, false);
+  }
+});
+await test("contradictory completed and status answers require review", () => {
+  for (const status of ["PENDING", "DECLINED", "UNKNOWN", "REVERSED"]) {
+    const p = { text: "Paid $50 at Store" }; const r = composeJevResult(p, jevFixture(p, { status }));
+    assert.equal(r.classification, "REVIEW"); assert.equal(r.decision.saveTransaction, false);
+  }
+});
+await test("completed refunds record credits", () => {
+  const p = { text: "Refunded PHP 500 from SM. Funds credited." };
+  const r = composeJevResult(p, jevFixture(p, { status: "REVERSED", direction: "CREDIT" }));
+  assert.equal(r.transaction?.type, "CREDIT"); assert.equal(r.decision.saveTransaction, true);
+});
+await test("Taglish candidates retain PHP", () => {
+  const p = { text: "Nagbayad ka ng ₱250.00 sa Jollibee. Salamat!" };
+  const r = composeJevResult(p, jevFixture(p, { category: "Food & Dining" }));
+  assert.equal(r.transaction?.currency, "PHP"); assert.equal(r.transaction?.merchant, "Jollibee");
+});
+await test("near-0.5 Nouls require review", () => {
+  const p = { text: "Paid $50 at Store" };
+  for (const overrides of [{ completed: 0.5 }, { phishing: 0.5 }, { credentials: 0.5 }]) {
+    const r = composeJevResult(p, jevFixture(p, overrides));
+    assert.equal(r.decision.requiresReview, true); assert.equal(r.decision.saveTransaction, false);
+  }
+});
+await test("low-confidence categories become General without blocking a valid amount", () => {
+  const p = { text: "Paid $50 at Store" }; const fixture = jevFixture(p);
+  fixture.answers.category = { type: "choice", choice: "Shopping", probabilities: Object.fromEntries(Object.keys(buildJevRequest(p).questions.category.type === "choice" ? (buildJevRequest(p).questions.category as {criteria: object}).criteria : {}).map((key) => [key, key === "Shopping" ? 0.55 : 0.05])), confidence: 0.5 };
+  const r = composeJevResult(p, fixture);
+  assert.equal(r.transaction?.category, "General"); assert.equal(r.decision.suggestCategory, false); assert.equal(r.decision.saveTransaction, true);
+});
+await test("missing and none-selected amount never invent values", () => {
+  for (const p of [{ text: "Payment completed at Store" }, { text: "Spent $20 at A and $30 at B" }]) {
+    const r = composeJevResult(p, jevFixture(p, { amount: "none" }));
+    assert.equal(r.transaction, null); assert.equal(r.decision.requiresReview, true);
+  }
+});
+await test("an explicit merchant rule overrides the inferred category in code", () => {
+  const p = { text: "Paid $50 at Starbucks", categoryRules: [{ keyword: "starbucks", category: "Shopping" }] };
+  const r = composeJevResult(p, jevFixture(p, { category: "Food & Dining" }));
+  assert.equal(r.transaction?.category, "Shopping"); assert.equal(r.decision.saveTransaction, true);
+});
+await test("real hostname comparison rejects lookalike domains", () => {
+  assert.equal(hostnameMatches("chase.com.evil.example", "chase.com"), false);
+  assert.equal(hostnameMatches("login.chase.com", "chase.com"), true);
+  const urls = parseUrlFacts("Verify at https://chase.com.evil.example/login");
+  assert.equal(urls[0].recognizedDomain, null); assert.equal(urls[0].lookalike, true);
+  assert.equal(urls[0].sourceIdentityVerified, "unknown");
+  assert.equal(parseUrlFacts("https://chase.com@evil.example")[0].hasUserInfo, true);
+});
+await test("ordinary security alerts are not heuristic phishing", () => {
+  const r = fallbackHeuristicClassifier("Security alert: unusual activity detected. Open the Chase app to review.");
+  assert.equal(r.decision.warn, false); assert.equal(r.isScamOrPhishing, false);
+});
+await test("phishing and credential requests block financial records and hiding", () => {
+  const p = { text: "Paid $50. Account suspended: verify at https://chase.com.evil.example" };
+  for (const overrides of [{ phishing: 0.99 }, { credentials: 0.99 }]) {
+    const r = composeJevResult(p, jevFixture(p, overrides));
+    assert.equal(r.decision.warn, true); assert.equal(r.transaction, null); assert.equal(r.decision.hideNotification, false);
+  }
+  const fallback = fallbackHeuristicClassifier(p.text);
+  assert.equal(fallback.decision.warn, true); assert.equal(fallback.confidence, 0);
+});
+await test("OTP and credentials never reach a provider, including in the title", async () => {
+  const fetchNever: typeof fetch = async () => { throw new Error("Privacy violation: fetch called"); };
+  for (const p of [{ text: "Your OTP is 123456. Paid $50" }, { text: "Paid $50", title: "Login code 123456" }, { text: "Password: secret-value. Paid $50" }, { text: "Use code 123456. Paid $50" }, { text: "https://example.com/reset?token=secret" }]) {
+    // Counting explicitly avoids classifyNotification's error fallback hiding a fetch assertion.
+    let calls = 0;
+    const r = await classifyNotification(p, { apiKey: "fake", fetch: async (...args) => { calls++; return fetchNever(...args); } });
+    assert.equal(calls, 0); assert.equal(r.classification, "IGNORED_OTP"); assert.equal(r.decision.requiresReview, false);
+  }
+});
+await test("missing key, service errors, malformed results abstain safely", async () => {
+  const p = { text: "Paid $50 at Store" };
+  for (const status of [401, 429, 529]) {
+    const r = await classifyNotification(p, { apiKey: "fake", fetch: async () => new Response("provider error", { status }) });
+    assert.equal(r.diagnostics.error, "service_unavailable"); assert.equal(r.decision.saveTransaction, false); assert.equal(r.decision.requiresReview, true);
+  }
+  const noKey = await classifyNotification(p, { apiKey: "" });
+  assert.equal(noKey.diagnostics.engine, "heuristic");
+  const invalid = await classifyNotification(p, { apiKey: "fake", fetch: async () => Response.json({ answers: {} }) });
+  assert.equal(invalid.diagnostics.error, "invalid_response");
+});
+await test("one batched request records usage, resolved model and latency", async () => {
+  const p = { text: "Paid $50 at Store" }; let calls = 0;
+  const fixture = jevFixture(p); fixture.usage = { input_tokens: 123, output_tokens: 45 };
+  const r = await classifyNotification(p, { apiKey: "fake", fetch: async (url, init) => {
+    calls++; assert.equal(url, "https://api.typesafe.ai/v1/systemone");
+    const body = JSON.parse(init!.body as string); assert.equal(Object.keys(body.questions).length, 8);
+    return Response.json(fixture);
+  } });
+  assert.equal(calls, 1); assert.equal(r.diagnostics.model, "jev-contract-fixture");
+  assert.equal(r.diagnostics.usage?.input_tokens, 123); assert.ok(r.diagnostics.latencyMs >= 0);
+});
+await test("unsupported choices and invalid distributions are rejected", () => {
+  const p = { text: "Paid $50 at Store" };
+  assert.throws(() => composeJevResult(p, jevFixture(p, { amount: "invented" })));
+  const fixture = jevFixture(p); (fixture.answers.amount as any).probabilities.none = 1;
+  assert.throws(() => composeJevResult(p, fixture));
+});
+await test("schema rejects contradictory and invalid financial records", () => {
+  const p = { text: "Paid $50 at Store" }; const r = composeJevResult(p, jevFixture(p));
+  for (const transaction of [{ ...r.transaction!, amount: -10 }, { ...r.transaction!, currency: "XYZ" }, { ...r.transaction!, amount: 0 }, { ...r.transaction!, category: "made up" }]) assert.equal(ClassificationResultSchema.safeParse({ ...r, transaction }).success, false);
+  assert.equal(ClassificationResultSchema.safeParse({ ...r, isScamOrPhishing: true }).success, false);
+  assert.equal(ClassificationResultSchema.safeParse({ ...r, diagnostics: { ...r.diagnostics, engine: "heuristic" } }).success, false);
+  assert.equal(ProcessNotificationSchema.safeParse({ text: "Paid $50", title: null, timestamp: null }).success, true);
+});
+await test("negative and malformed amounts are not truncated into candidates", () => {
+  for (const text of ["Paid -$50", "Paid $-50", "Paid PHP -50", "Paid - PHP 50", "Paid - 50 PHP", "Paid $ - 50", "Paid $0", "Paid $1,24.50", "Paid $12.345"]) assert.deepEqual(extractAmountCandidates(text), [], text);
+});
+console.log(`${passed} classifier contract checks passed. Live Jev API tokens used: 0. Mock usage values are test data.`);

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import NotificationReviewQueue from "@/components/NotificationReviewQueue";
 import {
   Shield,
   ShieldAlert,
@@ -922,6 +923,8 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+
+        <NotificationReviewQueue authToken={authToken} refreshKey={simLoading} />
 
         {/* ======================= OVERVIEW TAB ======================= */}
         {activeTab === "overview" && (

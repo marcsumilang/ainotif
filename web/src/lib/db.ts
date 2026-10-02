@@ -1,7 +1,8 @@
 import { drizzle, type NeonHttpDatabase } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
 import * as schema from "./schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
+import { buildJevRequest, isSensitiveOtp, type ClassificationResult, type NotificationPayload } from "../../../backend/src/ai/classifier";
 
 type DrizzleDb = NeonHttpDatabase<typeof schema>;
 let cachedDb: DrizzleDb | null = null;
@@ -31,6 +32,7 @@ interface MemoryStore {
   users: Map<string, schema.User>;
   transactions: schema.Transaction[];
   alerts: schema.SuspiciousAlert[];
+  analyses: schema.NotificationAnalysis[];
 }
 
 const now = Date.now();
@@ -173,6 +175,7 @@ const seedAlerts: schema.SuspiciousAlert[] = [
 ];
 
 const memoryStore: MemoryStore = {
+  analyses: [],
   users: new Map(),
   transactions: [...seedTransactions],
   alerts: [...seedAlerts],
@@ -546,6 +549,7 @@ export async function deleteUserData(userId: string): Promise<{ deletedTransacti
     try {
       await drizzleDb.delete(schema.transactions).where(eq(schema.transactions.userId, userId));
       await drizzleDb.delete(schema.suspiciousAlerts).where(eq(schema.suspiciousAlerts.userId, userId));
+      await drizzleDb.delete(schema.notificationAnalyses).where(eq(schema.notificationAnalyses.userId, userId));
       await drizzleDb.delete(schema.users).where(eq(schema.users.id, userId));
     } catch (err) {
       console.error("Failed to delete user records from Neon DB:", err);
@@ -562,7 +566,35 @@ export async function deleteUserData(userId: string): Promise<{ deletedTransacti
   deletedAlerts = initialAlertCount - memoryStore.alerts.length;
 
   memoryStore.users.delete(userId);
+  memoryStore.analyses = memoryStore.analyses.filter((item) => item.userId !== userId);
 
   return { deletedTransactions, deletedAlerts, success: true };
 }
 
+export async function saveNotificationAnalysis(userId: string, payload: NotificationPayload, analysis: ClassificationResult): Promise<string | null> {
+  const rawNotification = `${payload.title ? payload.title + " : " : ""}${payload.text}`;
+  if (analysis.droppedOtp || isSensitiveOtp(rawNotification)) return null;
+  await ensureUser(userId);
+  const context = buildJevRequest(payload, analysis.diagnostics.model ?? "jev-latest").state;
+  const item = {
+    userId, rawNotification, sourcePackage: payload.packageName ?? null,
+    timestamp: new Date(payload.timestamp ?? Date.now()), requiresReview: analysis.decision.requiresReview,
+    analysis, context,
+  };
+  const db = getDb();
+  if (db) {
+    const [saved] = await db.insert(schema.notificationAnalyses).values(item).returning();
+    return saved.id;
+  }
+  const saved = { ...item, id: crypto.randomUUID(), createdAt: new Date() };
+  memoryStore.analyses.unshift(saved);
+  return saved.id;
+}
+
+export async function getNotificationReviews(userId: string): Promise<schema.NotificationAnalysis[]> {
+  const db = getDb();
+  if (db) return db.select().from(schema.notificationAnalyses)
+    .where(and(eq(schema.notificationAnalyses.userId, userId), eq(schema.notificationAnalyses.requiresReview, true)))
+    .orderBy(desc(schema.notificationAnalyses.createdAt)).limit(50);
+  return memoryStore.analyses.filter((item) => item.userId === userId && item.requiresReview).slice(0, 50);
+}

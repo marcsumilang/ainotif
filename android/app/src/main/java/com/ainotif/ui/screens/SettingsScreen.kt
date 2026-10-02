@@ -67,7 +67,6 @@ fun SettingsScreen(
     val scamSensitivity by prefs.scamSensitivity.collectAsState()
     val isOfflineOnly by prefs.isOfflineOnly.collectAsState()
     val isHighPriorityPush by prefs.isHighPriorityPushEnabled.collectAsState()
-    val isAutoHideMaliciousNotif by prefs.isAutoHideMaliciousNotifEnabled.collectAsState()
     val autoHideWarningNotifSeconds by prefs.autoHideWarningNotifSeconds.collectAsState()
     val isAutoHideThreatContent by prefs.isAutoHideThreatMessageContent.collectAsState()
     val autoDismissThreatHours by prefs.autoDismissThreatHours.collectAsState()
@@ -578,14 +577,15 @@ fun SettingsScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("Auto-Hide Scam Notifications", fontWeight = FontWeight.SemiBold)
                                 Text(
-                                    "Instantly dismiss phishing notifications from the system notification bar so you won't tap malicious links",
+                                    "Original notifications stay visible while detection accuracy is evaluated. Warnings still appear when enabled.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                 )
                             }
                             Switch(
-                                checked = isAutoHideMaliciousNotif,
-                                onCheckedChange = { prefs.setAutoHideMaliciousNotifEnabled(it) }
+                                checked = false,
+                                enabled = false,
+                                onCheckedChange = { }
                             )
                         }
 
@@ -1200,6 +1200,48 @@ fun SettingsScreen(
                     }
                 }
 
+                // Web App / Auth Base URL Configuration
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("Web App / Auth Base URL", fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = webAuthUrlInput,
+                                onValueChange = { webAuthUrlInput = it },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = {
+                                        prefs.setWebUrl(webAuthUrlInput)
+                                        Toast.makeText(context, "Web Auth URL updated", Toast.LENGTH_SHORT).show()
+                                    },
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Save URL")
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        prefs.resetWebUrl()
+                                        webAuthUrlInput = BuildConfig.WEB_BASE_URL
+                                        Toast.makeText(context, "Reset to default Web URL", Toast.LENGTH_SHORT).show()
+                                    },
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Reset Default")
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Live Notification Simulator
                 item {
                     Card(
@@ -1282,6 +1324,7 @@ fun SettingsScreen(
                                             is ProcessNotificationOutcome.DroppedSecurityCode ->
                                                 "🛡️ Dropped Sensitive OTP on-device"
                                             is ProcessNotificationOutcome.Ignored -> "Bypassed / Ignored"
+                                            is ProcessNotificationOutcome.ReviewRequired -> "Review needed: ${outcome.reason}"
                                             is ProcessNotificationOutcome.Error -> "❌ Error: ${outcome.message}"
                                         }
                                         isSimulating = false
@@ -1326,6 +1369,9 @@ fun SettingsScreen(
                             } else {
                                 logs.take(5).forEach { log ->
                                     Text("• [${log.decision}] ${log.packageName}: ${log.title.orEmpty()}", fontSize = 11.sp)
+                                    if (log.decision == "REVIEW") {
+                                        Text(log.text.orEmpty(), fontSize = 12.sp)
+                                    }
                                 }
                             }
                         }
@@ -1665,7 +1711,7 @@ fun SettingsScreen(
                         value = manualInputText,
                         onValueChange = { manualInputText = it },
                         label = { Text("Deep Link or Token") },
-                        placeholder = { Text("ainotif://oauth/callback?token=... or token") },
+                        placeholder = { Text("notifai://oauth/callback?token=... or ainotif://...") },
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 3
                     )
@@ -1689,7 +1735,7 @@ fun SettingsScreen(
                         value = webAuthUrlInput,
                         onValueChange = { webAuthUrlInput = it },
                         label = { Text("Web Auth Base URL") },
-                        placeholder = { Text("http://10.0.2.2:3001") },
+                        placeholder = { Text(BuildConfig.WEB_BASE_URL) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -1699,7 +1745,10 @@ fun SettingsScreen(
                 Button(
                     onClick = {
                         val input = manualInputText.trim()
-                        if (input.startsWith("ainotif://")) {
+                        if (webAuthUrlInput.isNotBlank()) {
+                            prefs.setWebUrl(webAuthUrlInput)
+                        }
+                        if (input.startsWith("ainotif://") || input.startsWith("notifai://")) {
                             try {
                                 val uri = Uri.parse(input)
                                 val token = uri.getQueryParameter("token") ?: ""

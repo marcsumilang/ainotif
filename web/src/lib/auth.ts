@@ -30,7 +30,7 @@ export async function getAuthenticatedUser(req?: NextRequest): Promise<ResolvedA
     const token = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;
 
     if (token) {
-      if (token.startsWith("mock_user_")) {
+      if (isDevMock && token.startsWith("mock_user_")) {
         return {
           userId: token.replace("mock_", ""),
           isMock: true,
@@ -68,7 +68,7 @@ export async function getAuthenticatedUser(req?: NextRequest): Promise<ResolvedA
 
     // 3. Fallback Header or Query Param
     const xUserId = req.headers.get("x-user-id");
-    if (xUserId) {
+    if (isDevMock && xUserId) {
       return {
         userId: xUserId,
         isMock: isDevMock,
@@ -78,7 +78,7 @@ export async function getAuthenticatedUser(req?: NextRequest): Promise<ResolvedA
     try {
       const url = new URL(req.url);
       const queryUserId = url.searchParams.get("userId");
-      if (queryUserId) {
+      if (isDevMock && queryUserId) {
         return {
           userId: queryUserId,
           isMock: isDevMock,

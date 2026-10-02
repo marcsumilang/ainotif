@@ -1,6 +1,6 @@
 # NotifAi 🛡️📱
 
-**NotifAi** is a modern, privacy-first Android application, Wise-inspired web platform, and typesafe AI service that intercepts banking, SMS, and financial notifications, instantly drops sensitive OTPs/credentials on-device, forwards financial updates to a structured AI engine (OpenRouter Free Models / Zod), detects phishing/scam attempts, categorizes expenses, and syncs data to an offline-first Room database with Clerk user authentication and Neon PostgreSQL storage. Fully compliant with Google Play Developer Policies and Account Deletion mandates.
+**NotifAi** is a modern, privacy-first Android application, Wise-inspired web platform, and typesafe AI service that intercepts banking, SMS, and financial notifications, instantly drops sensitive OTPs/credentials on-device, forwards financial updates to a structured AI engine (TypeSafe Jev / Zod), detects phishing/scam attempts, categorizes expenses, and syncs data to an offline-first Room database with Clerk user authentication and Neon PostgreSQL storage. Fully compliant with Google Play Developer Policies and Account Deletion mandates.
 
 ---
 
@@ -25,7 +25,7 @@
                         │             Backend Service (TypeScript / Hono)        │
                         │                                                        │
                         │  1. Verify Clerk JWT                                   │
-                        │  2. Typesafe AI Engine (OpenRouter Free Models / Zod)  │
+                        │  2. Typesafe AI Engine (TypeSafe Jev / Zod)  │
                         │     - Classifies: Transaction vs. Phishing/Scam        │
                         │     - Extracts: Amount, Currency, Merchant, Category   │
                         │  3. Drizzle ORM + Connection Pooling                   │
@@ -73,7 +73,7 @@ ainotif/
     ├── src/
     │   ├── db/                      # Neon DB connection & Drizzle ORM schema
     │   ├── auth/                    # Clerk JWT verification middleware
-    │   ├── ai/                      # OpenRouter structured output & fallback classifier
+    │   ├── ai/                      # Shared Jev judgment pipeline and review policy
     │   ├── routes/                  # /process-notification, /transactions, /alerts, /stats
     │   └── index.ts                 # Hono server setup
     ├── test/                        # Classifier unit & API integration test suites
@@ -96,6 +96,8 @@ ainotif/
 ---
 
 ## Getting Started
+
+See [Jev setup, migration, evaluation, and tester checklist](docs/jev-migration.md) before enabling notification processing with Neon.
 
 ### 1. Web Dashboard (Next.js & Cloudflare Wrangler)
 
@@ -133,7 +135,7 @@ pnpm install
 
 # Configure environment variables
 cp .env.example .env
-# Edit .env to add your OPENROUTER_API_KEY, DATABASE_URL, and CLERK keys
+# Edit .env to add your TYPESAFE_API_KEY, DATABASE_URL, and CLERK keys
 # (By default, DEV_MOCK_AUTH=true allows instant testing without live keys)
 
 # Run integration tests
@@ -191,7 +193,7 @@ npm run build-and-install
    - These messages are **never sent over the network** or logged to cloud servers.
 
 3. **Typesafe AI Transaction & Phishing Detection**:
-   - OpenRouter (Free Models such as `openrouter/free`, `google/gemma-4-31b-it:free`, `qwen/qwen3.8-27b:free`) with Zod schema enforcement extracts precise transaction data (`amount`, `currency`, `merchant`, `category`, `type`).
+   - TypeSafe Jev batches typed judgments, selects pre-parsed amount and merchant spans, and validates financial fields before saving. Uncertain notifications and fallback results are retained for review; automatic hiding is disabled until a labeled evaluation supports enabling it.
    - Evaluates urgency, sender legitimacy, suspicious short links, and phishing lures with automated risk scores (`0-100`).
 
 4. **Zero-Configuration Offline / Demo Mode**:

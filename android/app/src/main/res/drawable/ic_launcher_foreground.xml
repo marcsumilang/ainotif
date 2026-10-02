@@ -5,40 +5,24 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
     <group
-        android:scaleX="0.12"
-        android:scaleY="0.12"
-        android:translateX="23.28"
-        android:translateY="23.28">
-        <!-- Shield Background Fill -->
+        android:scaleX="0.84"
+        android:scaleY="0.84"
+        android:translateX="40.96"
+        android:translateY="40.96">
         <path
             android:fillColor="#235414"
-            android:fillAlpha="0.4"
-            android:pathData="M256,70 C345,110 394,116 414,126 C416,230 380,340 256,438 C132,340 96,230 98,126 C118,116 167,110 256,70 Z" />
-        <!-- Shield Outline -->
+            android:fillAlpha="0.22"
+            android:pathData="M256,72 C319,102 367,119 413,129 C418,246 380,347 256,428 C132,347 94,246 99,129 C145,119 193,102 256,72 Z" />
         <path
             android:strokeColor="#9FE870"
-            android:strokeWidth="26"
+            android:strokeWidth="22"
             android:strokeLineJoin="round"
-            android:pathData="M256,70 C345,110 394,116 414,126 C416,230 380,340 256,438 C132,340 96,230 98,126 C118,116 167,110 256,70 Z" />
-        <!-- NotifAi 'N' Monogram -->
+            android:pathData="M256,72 C319,102 367,119 413,129 C418,246 380,347 256,428 C132,347 94,246 99,129 C145,119 193,102 256,72 Z" />
         <path
             android:strokeColor="#9FE870"
-            android:strokeWidth="32"
+            android:strokeWidth="30"
             android:strokeLineCap="round"
             android:strokeLineJoin="round"
-            android:pathData="M196,336 L196,182 L316,330 L316,176" />
-        <!-- Inner Radar Wave -->
-        <path
-            android:strokeColor="#9FE870"
-            android:strokeWidth="20"
-            android:strokeLineCap="round"
-            android:pathData="M330,115 C352,128 368,148 376,172" />
-        <!-- Outer Radar Wave -->
-        <path
-            android:strokeColor="#9FE870"
-            android:strokeWidth="18"
-            android:strokeAlpha="0.65"
-            android:strokeLineCap="round"
-            android:pathData="M362,85 C396,106 422,136 434,172" />
+            android:pathData="M193,331 L193,185 L319,329 L319,183" />
     </group>
 </vector>

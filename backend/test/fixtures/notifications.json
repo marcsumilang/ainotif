@@ -1,0 +1,21 @@
+[
+  { "id": "cashback-offer", "text": "Get $50 cashback when you sign up for a new card.", "completed": false, "phishing": false },
+  { "id": "balance-before-spend", "text": "Balance $1,240.10. You spent $42.50 at Trader Joe's on 09/27.", "completed": true, "phishing": false, "amount": 42.5, "currency": "USD", "direction": "DEBIT" },
+  { "id": "php-payment", "text": "Paid PHP 1,250.00 at SM Store.", "completed": true, "phishing": false, "amount": 1250, "currency": "PHP", "direction": "DEBIT" },
+  { "id": "legitimate-security-alert", "text": "Security alert: unusual activity detected. Open the Chase app to review.", "completed": false, "phishing": false },
+  { "id": "otp-and-payment", "text": "Your OTP is 123456. Paid $50 at Store.", "completed": false, "phishing": false, "privacy": true },
+  { "id": "otp-in-title", "title": "Your login code is 123456", "text": "Paid $50 at Store.", "completed": false, "phishing": false, "privacy": true },
+  { "id": "lookalike-domain", "text": "Your account is suspended. Verify now at https://chase.com.evil.example/login.", "completed": false, "phishing": true },
+  { "id": "userinfo-domain", "text": "Account locked! Confirm your details at https://chase.com@evil.example.", "completed": false, "phishing": true },
+  { "id": "real-domain-security", "text": "Unusual activity. Open your bank app, or visit https://www.chase.com for help.", "completed": false, "phishing": false },
+  { "id": "credited-refund", "text": "Refund of PHP 500 from SM Store was credited to your account.", "completed": true, "phishing": false, "amount": 500, "currency": "PHP", "direction": "CREDIT" },
+  { "id": "declined", "text": "Your payment of $49.99 at Amazon was declined. No money was deducted.", "completed": false, "phishing": false },
+  { "id": "pending", "text": "Pending authorization of $20 at Store. This charge has not settled.", "completed": false, "phishing": false },
+  { "id": "multiple-independent-payments", "text": "Today you paid $20 at Cafe and $30 at Store.", "completed": true, "phishing": false, "review": true },
+  { "id": "fee-and-payment", "text": "You transferred PHP 1,000 to Ana. Fee PHP 15. Remaining balance PHP 4,985.", "completed": true, "phishing": false, "amount": 1000, "currency": "PHP", "direction": "TRANSFER" },
+  { "id": "taglish-payment", "text": "Nagbayad ka ng ₱250.00 sa Jollibee. Successful ang payment mo.", "completed": true, "phishing": false, "amount": 250, "currency": "PHP", "direction": "DEBIT" },
+  { "id": "taglish-received", "text": "Nakareceive ka ng PHP 750 from Ana. Na-credit na sa account mo.", "completed": true, "phishing": false, "amount": 750, "currency": "PHP", "direction": "CREDIT" },
+  { "id": "euro", "text": "Paid €4.80 at Starbucks Coffee Amsterdam.", "completed": true, "phishing": false, "amount": 4.8, "currency": "EUR", "direction": "DEBIT" },
+  { "id": "balance-only", "text": "Your available balance is PHP 8,400. Credit limit PHP 20,000.", "completed": false, "phishing": false },
+  { "id": "credential-request", "text": "Account suspended immediately. Send your password to our support agent to unlock access.", "completed": false, "phishing": true }
+]

@@ -10,7 +10,8 @@
     "deploy": "wrangler deploy",
     "build": "tsc",
     "start": "node dist/node.js",
-    "test": "tsx test/classifier.test.ts",
+    "test": "node --import tsx test/classifier.test.ts && node --import tsx test/api.test.ts",
+    "evaluate:jev": "node --import tsx scripts/evaluate-jev.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "adb-install": "node ../scripts/adb-install.js"
@@ -22,7 +23,6 @@
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.39.3",
     "hono": "^4.7.1",
-    "openai": "^7.23.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {

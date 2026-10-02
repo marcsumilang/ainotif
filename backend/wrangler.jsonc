@@ -7,7 +7,7 @@
     "nodejs_compat"
   ],
   "vars": {
-    "OPENROUTER_MODEL": "openrouter/free",
+    "TYPESAFE_MODEL": "jev-latest",
     "DEV_MOCK_AUTH": "true"
   }
 }
