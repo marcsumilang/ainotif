@@ -132,66 +132,110 @@ fun FeedScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Normalized Summary Card
+            // Wise Hero Account Card
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 6.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    containerColor = com.ainotif.ui.theme.WiseForestInk
                 ),
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(24.dp)
             ) {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(20.dp)
                 ) {
-                    Column {
-                        Text(
-                            "Total Spent ($baseCurrency)",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                        )
-                        Text(
-                            CurrencyConverter.format(totalDebit, baseCurrency),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(percent = 50),
+                            color = com.ainotif.ui.theme.WisePaper.copy(alpha = 0.15f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(com.ainotif.ui.theme.WiseLimeVoltage)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    "Total Outflow • $baseCurrency",
+                                    color = com.ainotif.ui.theme.WisePaper,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(percent = 50),
+                            color = com.ainotif.ui.theme.WiseLimeVoltage
+                        ) {
+                            Text(
+                                "${transactions.size} records",
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                                color = com.ainotif.ui.theme.WiseForestInk,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
                     }
 
-                    VerticalDivider(modifier = Modifier.height(36.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
-                    Column {
-                        Text(
-                            "Total Received",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                        )
-                        Text(
-                            CurrencyConverter.format(totalCredit, baseCurrency),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF10B981)
-                        )
-                    }
+                    Text(
+                        CurrencyConverter.format(totalDebit, baseCurrency),
+                        fontSize = 36.sp,
+                        fontWeight = FontWeight.Black,
+                        color = com.ainotif.ui.theme.WiseLimeVoltage,
+                        letterSpacing = (-1).sp
+                    )
 
-                    VerticalDivider(modifier = Modifier.height(36.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = com.ainotif.ui.theme.WisePaper.copy(alpha = 0.15f))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                    Column {
-                        Text(
-                            "Records",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                        )
-                        Text(
-                            "${transactions.size}",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(
+                                "Total Inflow",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = com.ainotif.ui.theme.WisePaper.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                CurrencyConverter.format(totalCredit, baseCurrency),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = com.ainotif.ui.theme.WisePaper
+                            )
+                        }
+
+                        Column(horizontalAlignment = Alignment.End) {
+                            val net = totalCredit - totalDebit
+                            Text(
+                                "Net Cash Flow",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = com.ainotif.ui.theme.WisePaper.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                CurrencyConverter.format(net, baseCurrency),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (net >= 0) com.ainotif.ui.theme.WiseLimeVoltage else com.ainotif.ui.theme.WiseAlarmRed
+                            )
+                        }
                     }
                 }
             }
@@ -228,21 +272,34 @@ fun FeedScreen(
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    val chipShape = RoundedCornerShape(percent = 50)
+                    val chipColors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = com.ainotif.ui.theme.WiseLimeVoltage,
+                        selectedLabelColor = com.ainotif.ui.theme.WiseForestInk,
+                        selectedLeadingIconColor = com.ainotif.ui.theme.WiseForestInk
+                    )
+
                     FilterChip(
                         selected = selectedTypeFilter == "ALL",
                         onClick = { selectedTypeFilter = "ALL" },
-                        label = { Text("All") }
+                        shape = chipShape,
+                        colors = chipColors,
+                        label = { Text("All", fontWeight = if (selectedTypeFilter == "ALL") FontWeight.Bold else FontWeight.Medium) }
                     )
                     FilterChip(
                         selected = selectedTypeFilter == "DEBIT",
                         onClick = { selectedTypeFilter = "DEBIT" },
-                        label = { Text("Debits") },
+                        shape = chipShape,
+                        colors = chipColors,
+                        label = { Text("Debits", fontWeight = if (selectedTypeFilter == "DEBIT") FontWeight.Bold else FontWeight.Medium) },
                         leadingIcon = { Icon(Icons.Default.ArrowUpward, contentDescription = null, modifier = Modifier.size(14.dp)) }
                     )
                     FilterChip(
                         selected = selectedTypeFilter == "CREDIT",
                         onClick = { selectedTypeFilter = "CREDIT" },
-                        label = { Text("Credits") },
+                        shape = chipShape,
+                        colors = chipColors,
+                        label = { Text("Credits", fontWeight = if (selectedTypeFilter == "CREDIT") FontWeight.Bold else FontWeight.Medium) },
                         leadingIcon = { Icon(Icons.Default.ArrowDownward, contentDescription = null, modifier = Modifier.size(14.dp)) }
                     )
 
@@ -253,7 +310,9 @@ fun FeedScreen(
                             onClick = {
                                 selectedCategoryFilter = if (selectedCategoryFilter == cat) "ALL" else cat
                             },
-                            label = { Text(cat) }
+                            shape = chipShape,
+                            colors = chipColors,
+                            label = { Text(cat, fontWeight = if (selectedCategoryFilter == cat) FontWeight.Bold else FontWeight.Medium) }
                         )
                     }
                 }
@@ -403,7 +462,8 @@ fun TransactionItemCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() },
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(16.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Row(
@@ -412,15 +472,12 @@ fun TransactionItemCard(
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Category Icon Badge
+            // Category Icon Badge (Wise Linen Mist Circle)
             Box(
                 modifier = Modifier
-                    .size(44.dp)
+                    .size(46.dp)
                     .clip(CircleShape)
-                    .background(
-                        if (isDebit) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
-                        else Color(0xFF10B981).copy(alpha = 0.12f)
-                    ),
+                    .background(com.ainotif.ui.theme.WiseLinenMist),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -436,8 +493,8 @@ fun TransactionItemCard(
                         else -> Icons.Default.AttachMoney
                     },
                     contentDescription = tx.category,
-                    tint = if (isDebit) MaterialTheme.colorScheme.primary else Color(0xFF10B981),
-                    modifier = Modifier.size(24.dp)
+                    tint = com.ainotif.ui.theme.WiseForestInk,
+                    modifier = Modifier.size(22.dp)
                 )
             }
 
@@ -447,19 +504,21 @@ fun TransactionItemCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = tx.merchant,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 16.sp
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(3.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
-                        shape = RoundedCornerShape(6.dp),
+                        shape = RoundedCornerShape(percent = 50),
                         color = MaterialTheme.colorScheme.surfaceVariant
                     ) {
                         Text(
                             text = tx.category,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            style = MaterialTheme.typography.labelSmall
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     Spacer(modifier = Modifier.width(6.dp))
@@ -482,12 +541,12 @@ fun TransactionItemCard(
             // Amount (with converted equivalent if different from base currency)
             Column(horizontalAlignment = Alignment.End) {
                 val prefix = if (isDebit) "-" else "+"
-                val signColor = if (isDebit) MaterialTheme.colorScheme.onSurface else Color(0xFF10B981)
+                val signColor = if (isDebit) MaterialTheme.colorScheme.onSurface else com.ainotif.ui.theme.WiseSpruce
                 val formattedOriginal = CurrencyConverter.format(tx.amount, tx.currency)
                 Text(
                     text = "$prefix$formattedOriginal",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 17.sp,
                     color = signColor
                 )
                 if (!tx.currency.equals(baseCurrency, ignoreCase = true)) {
@@ -663,7 +722,7 @@ fun TransactionDetailBottomSheet(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Save Button
+            // Save Button (Wise Pill Button)
             Button(
                 onClick = {
                     onSave(
@@ -674,12 +733,18 @@ fun TransactionDetailBottomSheet(
                         )
                     )
                 },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape = RoundedCornerShape(percent = 50),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = com.ainotif.ui.theme.WiseForestInk,
+                    contentColor = com.ainotif.ui.theme.WisePaper
+                )
             ) {
                 Icon(Icons.Default.Check, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Save Changes")
+                Text("Save Changes", fontWeight = FontWeight.Bold)
             }
 
             Spacer(modifier = Modifier.height(16.dp))

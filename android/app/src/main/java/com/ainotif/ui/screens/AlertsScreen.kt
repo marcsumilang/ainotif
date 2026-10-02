@@ -57,16 +57,16 @@ fun AlertsScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Status Header Banner
+            // Status Header Banner (Wise Styling)
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = if (alerts.isNotEmpty()) ScamRed.copy(alpha = 0.15f)
-                    else MaterialTheme.colorScheme.surfaceVariant
+                    containerColor = if (alerts.isNotEmpty()) com.ainotif.ui.theme.WiseAlarmRed.copy(alpha = 0.12f)
+                    else com.ainotif.ui.theme.WiseLinenMist
                 ),
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(20.dp)
             ) {
                 Row(
                     modifier = Modifier
@@ -78,14 +78,17 @@ fun AlertsScreen(
                         modifier = Modifier
                             .size(48.dp)
                             .clip(CircleShape)
-                            .background(if (alerts.isNotEmpty()) ScamRed.copy(alpha = 0.2f) else Color(0xFF10B981).copy(alpha = 0.2f)),
+                            .background(
+                                if (alerts.isNotEmpty()) com.ainotif.ui.theme.WiseAlarmRed.copy(alpha = 0.2f)
+                                else com.ainotif.ui.theme.WiseLimeVoltage.copy(alpha = 0.5f)
+                            ),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = if (alerts.isNotEmpty()) Icons.Default.Warning else Icons.Default.Shield,
                             contentDescription = null,
-                            tint = if (alerts.isNotEmpty()) ScamRed else Color(0xFF10B981),
-                            modifier = Modifier.size(28.dp)
+                            tint = if (alerts.isNotEmpty()) com.ainotif.ui.theme.WiseAlarmRed else com.ainotif.ui.theme.WiseForestInk,
+                            modifier = Modifier.size(26.dp)
                         )
                     }
 
@@ -96,13 +99,13 @@ fun AlertsScreen(
                             text = if (alerts.isNotEmpty()) "${alerts.size} Active Threat(s) Intercepted" else "Shield Active & Guarding",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = if (alerts.isNotEmpty()) ScamRed else Color(0xFF10B981)
+                            color = if (alerts.isNotEmpty()) com.ainotif.ui.theme.WiseAlarmRed else com.ainotif.ui.theme.WiseForestInk
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = if (alerts.isNotEmpty()) "Review the deceptive notifications below." else "No malicious or phishing messages detected.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            color = if (alerts.isNotEmpty()) com.ainotif.ui.theme.WiseAlarmRed.copy(alpha = 0.8f) else com.ainotif.ui.theme.WiseSpruce
                         )
                     }
                 }
@@ -178,8 +181,9 @@ fun AlertItemCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
             modifier = Modifier
@@ -193,11 +197,11 @@ fun AlertItemCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(percent = 50),
                     color = riskColor.copy(alpha = 0.15f)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
@@ -307,7 +311,7 @@ fun AlertItemCard(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Action Buttons: Share Warning & Dismiss Threat
+            // Action Buttons: Share Warning & Dismiss Threat (Wise Pill Buttons)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -316,22 +320,30 @@ fun AlertItemCard(
                     onClick = {
                         shareScamWarning(context, alert)
                     },
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(percent = 50),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, com.ainotif.ui.theme.WiseForestInk),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = com.ainotif.ui.theme.WiseForestInk
+                    ),
                     modifier = Modifier.weight(1f)
                 ) {
                     Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Share Warning", fontSize = 13.sp)
+                    Text("Share Warning", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
 
                 Button(
                     onClick = onDismiss,
-                    shape = RoundedCornerShape(10.dp),
+                    shape = RoundedCornerShape(percent = 50),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = com.ainotif.ui.theme.WiseForestInk,
+                        contentColor = com.ainotif.ui.theme.WisePaper
+                    ),
                     modifier = Modifier.weight(1f)
                 ) {
                     Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Dismiss", fontSize = 13.sp)
+                    Text("Dismiss", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

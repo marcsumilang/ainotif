@@ -177,16 +177,16 @@ fun SettingsScreen(
                             }
 
                             Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = if (isListenerPermissionGranted) Color(0xFF10B981).copy(alpha = 0.15f)
+                                shape = RoundedCornerShape(percent = 50),
+                                color = if (isListenerPermissionGranted) com.ainotif.ui.theme.WiseLinenMist
                                 else Color(0xFFEA580C).copy(alpha = 0.15f)
                             ) {
                                 Text(
                                     text = if (isListenerPermissionGranted) "GRANTED" else "ACTION NEEDED",
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (isListenerPermissionGranted) Color(0xFF10B981) else Color(0xFFEA580C)
+                                    color = if (isListenerPermissionGranted) com.ainotif.ui.theme.WiseForestInk else Color(0xFFEA580C)
                                 )
                             }
                         }
@@ -208,11 +208,13 @@ fun SettingsScreen(
                                     context.startActivity(intent)
                                 },
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp)
+                                shape = RoundedCornerShape(percent = 50),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, com.ainotif.ui.theme.WiseForestInk),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = com.ainotif.ui.theme.WiseForestInk)
                             ) {
                                 Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Settings")
+                                Text("Settings", fontWeight = FontWeight.Bold)
                             }
 
                             Button(
@@ -229,7 +231,11 @@ fun SettingsScreen(
                                     }
                                 },
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(percent = 50),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = com.ainotif.ui.theme.WiseForestInk,
+                                    contentColor = com.ainotif.ui.theme.WisePaper
+                                ),
                                 enabled = isListenerPermissionGranted && !isScanningActiveNotifications
                             ) {
                                 if (isScanningActiveNotifications) {
@@ -277,16 +283,16 @@ fun SettingsScreen(
                             }
 
                             Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = if (isSmsPermissionGranted) Color(0xFF10B981).copy(alpha = 0.15f)
-                                else Color(0xFF3B82F6).copy(alpha = 0.15f)
+                                shape = RoundedCornerShape(percent = 50),
+                                color = if (isSmsPermissionGranted) com.ainotif.ui.theme.WiseLinenMist
+                                else com.ainotif.ui.theme.WiseSignalBlue.copy(alpha = 0.15f)
                             ) {
                                 Text(
                                     text = if (isSmsPermissionGranted) "READY" else "PERMISSION NEEDED",
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (isSmsPermissionGranted) Color(0xFF10B981) else Color(0xFF3B82F6)
+                                    color = if (isSmsPermissionGranted) com.ainotif.ui.theme.WiseForestInk else com.ainotif.ui.theme.WiseSignalBlue
                                 )
                             }
                         }
@@ -301,24 +307,24 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.height(10.dp))
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            shape = RoundedCornerShape(12.dp),
+                            color = com.ainotif.ui.theme.WiseLinenMist.copy(alpha = 0.5f)
                         ) {
                             Row(
-                                modifier = Modifier.padding(8.dp),
+                                modifier = Modifier.padding(10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
                                     Icons.Default.Shield,
                                     contentDescription = null,
-                                    tint = Color(0xFF10B981),
+                                    tint = com.ainotif.ui.theme.WiseForestInk,
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     "Sensitive OTPs & passwords are drop-redacted on-device.",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                                    color = com.ainotif.ui.theme.WiseForestInk
                                 )
                             }
                         }
@@ -332,12 +338,21 @@ fun SettingsScreen(
                                     smsPermissionLauncher.launch(Manifest.permission.READ_SMS)
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp),
+                            shape = RoundedCornerShape(percent = 50),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = com.ainotif.ui.theme.WiseForestInk,
+                                contentColor = com.ainotif.ui.theme.WisePaper
+                            )
                         ) {
                             Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(if (isSmsPermissionGranted) "Import SMS Inbox Messages" else "Grant Permission & Import SMS")
+                            Text(
+                                if (isSmsPermissionGranted) "Import SMS Inbox Messages" else "Grant Permission & Import SMS",
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
@@ -351,29 +366,29 @@ fun SettingsScreen(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        // Privacy shield status banner
+                        // Privacy shield status banner (Wise Linen Mist)
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(10.dp),
-                            color = Color(0xFFECFDF5)
+                            shape = RoundedCornerShape(12.dp),
+                            color = com.ainotif.ui.theme.WiseLinenMist
                         ) {
                             Row(
-                                modifier = Modifier.padding(12.dp),
+                                modifier = Modifier.padding(14.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Shield, contentDescription = null, tint = Color(0xFF059669))
+                                Icon(Icons.Default.Shield, contentDescription = null, tint = com.ainotif.ui.theme.WiseForestInk)
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Column {
                                     Text(
                                         "Local OTP Shield Active",
                                         fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.bodyMedium,
-                                        color = Color(0xFF065F46)
+                                        color = com.ainotif.ui.theme.WiseForestInk
                                     )
                                     Text(
                                         "Zero authentication codes or passwords have ever left this phone.",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = Color(0xFF047857)
+                                        color = com.ainotif.ui.theme.WiseSpruce
                                     )
                                 }
                             }
@@ -661,17 +676,21 @@ fun SettingsScreen(
                                         Toast.makeText(context, "Sync complete", Toast.LENGTH_SHORT).show()
                                     }
                                 },
-                                shape = RoundedCornerShape(8.dp)
+                                shape = RoundedCornerShape(percent = 50),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = com.ainotif.ui.theme.WiseForestInk,
+                                    contentColor = com.ainotif.ui.theme.WisePaper
+                                )
                             ) {
                                 Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Sync Now")
+                                Text("Sync Now", fontWeight = FontWeight.Bold)
                             }
                         }
 
-                        Divider(modifier = Modifier.padding(vertical = 12.dp))
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
-                        // Data Export Buttons
+                        // Data Export Buttons (Wise Pill Buttons)
                         Text("Export Transaction History", fontWeight = FontWeight.SemiBold)
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(
@@ -684,11 +703,13 @@ fun SettingsScreen(
                                     DataExporter.shareExport(context, csv, "text/csv", "AiNotif Transactions Export.csv")
                                 },
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp)
+                                shape = RoundedCornerShape(percent = 50),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, com.ainotif.ui.theme.WiseForestInk),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = com.ainotif.ui.theme.WiseForestInk)
                             ) {
                                 Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Export CSV")
+                                Text("Export CSV", fontWeight = FontWeight.Bold)
                             }
 
                             OutlinedButton(
@@ -697,21 +718,23 @@ fun SettingsScreen(
                                     DataExporter.shareExport(context, json, "application/json", "AiNotif Transactions Export.json")
                                 },
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(8.dp)
+                                shape = RoundedCornerShape(percent = 50),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, com.ainotif.ui.theme.WiseForestInk),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = com.ainotif.ui.theme.WiseForestInk)
                             ) {
                                 Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Export JSON")
+                                Text("Export JSON", fontWeight = FontWeight.Bold)
                             }
                         }
 
-                        Divider(modifier = Modifier.padding(vertical = 12.dp))
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
                         // Wipe All Data Button
                         OutlinedButton(
                             onClick = { showWipeDataDialog = true },
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(percent = 50),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(16.dp))

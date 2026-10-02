@@ -13,31 +13,41 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Mint80,
-    secondary = EmeraldGrey80,
-    tertiary = ScamOrange,
-    background = DarkBackground,
-    surface = DarkSurface,
-    surfaceVariant = DarkSurfaceVariant,
-    onPrimary = Color.Black,
-    onSecondary = Color.Black,
-    onTertiary = Color.White,
-    onBackground = Color(0xFFE2E8F0),
-    onSurface = Color(0xFFF1F5F9),
+    primary = WiseLimeVoltage,
+    onPrimary = WiseForestInk,
+    primaryContainer = WiseForestInk,
+    onPrimaryContainer = WiseLimeVoltage,
+    secondary = WiseLinenMist,
+    onSecondary = WiseForestInk,
+    secondaryContainer = WiseSpruce,
+    onSecondaryContainer = WisePaper,
+    tertiary = WiseAlarmRed,
+    background = WiseDarkBackground,
+    surface = WiseDarkSurface,
+    surfaceVariant = WiseDarkSurfaceVariant,
+    onBackground = Color(0xFFE2E8E0),
+    onSurface = Color(0xFFF1F5F0),
+    onSurfaceVariant = Color(0xFFCCD6C8),
+    outline = Color(0xFF384D32)
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Emerald40,
-    secondary = EmeraldGrey40,
-    tertiary = ScamRed,
-    background = Color(0xFFF8FAFC),
-    surface = Color.White,
-    surfaceVariant = Color(0xFFF1F5F9),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF0F172A),
-    onSurface = Color(0xFF1E293B),
+    primary = WiseForestInk,
+    onPrimary = WisePaper,
+    primaryContainer = WiseLimeVoltage,
+    onPrimaryContainer = WiseForestInk,
+    secondary = WiseSpruce,
+    onSecondary = WisePaper,
+    secondaryContainer = WiseLinenMist,
+    onSecondaryContainer = WiseForestInk,
+    tertiary = WiseAlarmRed,
+    background = WiseFogLight,
+    surface = WisePaper,
+    surfaceVariant = WiseFog,
+    onBackground = WiseCharcoal,
+    onSurface = WiseObsidian,
+    onSurfaceVariant = WiseCharcoal,
+    outline = WisePebble
 )
 
 @Composable

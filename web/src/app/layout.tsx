@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AiNotif | Financial & Threat Command Center",
-  description: "Privacy-first AI notification guardian, financial analytics, and phishing interceptor for desktop & big screens",
+  title: "AiNotif | Wise-Powered Financial & Threat Intelligence",
+  description: "Privacy-first AI notification guardian, smart expense analytics, and phishing interceptor",
 };
 
 export default function RootLayout({
@@ -12,8 +12,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className="min-h-screen bg-[#090d16] text-slate-100 antialiased selection:bg-indigo-500/30 selection:text-indigo-200">
+    <html lang="en">
+      <body className="min-h-screen bg-[#f7f9f6] text-[#454745] antialiased selection:bg-[#9fe870] selection:text-[#163300]">
         {children}
       </body>
     </html>

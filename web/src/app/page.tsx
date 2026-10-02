@@ -34,6 +34,10 @@ import {
   Radio,
   Edit2,
   Layers,
+  Building2,
+  ShoppingBag,
+  Coffee,
+  HelpCircle,
 } from "lucide-react";
 
 interface Transaction {
@@ -61,17 +65,6 @@ interface SuspiciousAlert {
   timestamp: string | Date;
   isDismissed: boolean;
   createdAt: string | Date;
-}
-
-interface Stats {
-  totalTransactions: number;
-  totalSpent: number;
-  totalReceived: number;
-  netFlow: number;
-  categoryBreakdown: Record<string, number>;
-  totalAlerts: number;
-  activeAlerts: number;
-  avgRiskScore: number;
 }
 
 const PRESETS = [
@@ -142,6 +135,14 @@ function convertCurrency(amount: number, from: string, to: string): number {
   const toRate = RATES_TO_USD[to.toUpperCase()] || 1.0;
   const inUsd = amount * fromRate;
   return inUsd / toRate;
+}
+
+function formatCurrency(amount: number, currency: string): string {
+  const sym = CURRENCY_SYMBOLS[currency] || currency + " ";
+  return `${sym}${Math.abs(amount).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 export default function Dashboard() {
@@ -326,6 +327,10 @@ export default function Dashboard() {
       totalTransactions: transactions.length,
       activeAlerts: alerts.filter((a) => !a.isDismissed).length,
       totalAlerts: alerts.length,
+      avgRiskScore:
+        alerts.length > 0
+          ? Math.round(alerts.reduce((acc, a) => acc + a.riskScore, 0) / alerts.length)
+          : 0,
     };
   }, [transactions, alerts, baseCurrency]);
 
@@ -518,61 +523,118 @@ export default function Dashboard() {
 
   const getRiskBadge = (score: number) => {
     if (score >= 80) {
-      return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/40">Critical Risk ({score}%)</span>;
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#cb272f]/10 text-[#cb272f] border border-[#cb272f]/20">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#cb272f] animate-pulse" />
+          Critical ({score}%)
+        </span>
+      );
+    } else if (score >= 50) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#e8ebe6] text-[#163300] border border-[#868685]/30">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+          Moderate ({score}%)
+        </span>
+      );
     }
-    if (score >= 60) {
-      return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40">High Risk ({score}%)</span>;
-    }
-    if (score >= 40) {
-      return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-yellow-500/20 text-yellow-300 border border-yellow-500/40">Moderate ({score}%)</span>;
-    }
-    return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-700 text-slate-300">Low Risk ({score}%)</span>;
+    return (
+      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#e2f6d5] text-[#054d28] border border-[#9fe870]/40">
+        <span className="w-1.5 h-1.5 rounded-full bg-[#054d28]" />
+        Low Risk ({score}%)
+      </span>
+    );
   };
 
-  const symbol = CURRENCY_SYMBOLS[baseCurrency] || "$";
+  const getMerchantIcon = (merchant: string, category: string) => {
+    const m = merchant.toLowerCase();
+    const c = category.toLowerCase();
+    if (m.includes("starbucks") || m.includes("coffee")) return <Coffee className="w-4 h-4 text-[#163300]" />;
+    if (m.includes("trader") || m.includes("market") || m.includes("grocer") || c.includes("food"))
+      return <ShoppingBag className="w-4 h-4 text-[#163300]" />;
+    if (m.includes("bank") || m.includes("chase") || m.includes("citi") || m.includes("deposit") || c.includes("salary"))
+      return <Building2 className="w-4 h-4 text-[#163300]" />;
+    return <CreditCard className="w-4 h-4 text-[#163300]" />;
+  };
 
   return (
-    <div className="min-h-screen bg-[#090d16] text-slate-100 flex flex-col selection:bg-indigo-500/30">
-      {/* Top Universal App Header */}
-      <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-[#090d16]/90 backdrop-blur-xl px-4 md:px-6 py-3.5">
-        <div className="max-w-[1920px] mx-auto flex flex-wrap items-center justify-between gap-3">
-          {/* Logo & Product Title */}
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-400 p-[1px] shadow-lg shadow-indigo-500/20 flex items-center justify-center">
-              <div className="w-full h-full bg-slate-950 rounded-[11px] flex items-center justify-center">
-                <Shield className="w-5 h-5 text-indigo-400" />
+    <div className="min-h-screen bg-[#f7f9f6] text-[#454745] font-sans">
+      {/* Wise Top Navigation Bar */}
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#e8ebe6] px-4 sm:px-8 py-3.5 shadow-sm">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+          {/* Brand */}
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => setActiveTab("overview")}>
+              <div className="w-10 h-10 rounded-full bg-[#163300] flex items-center justify-center text-[#9fe870] font-black text-xl shadow-sm">
+                W
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl font-black tracking-tighter text-[#163300]">
+                    AiNotif
+                  </span>
+                  <span className="bg-[#e2f6d5] text-[#163300] text-[11px] font-bold px-2 py-0.5 rounded-full border border-[#9fe870]/50 uppercase tracking-wider">
+                    Wise Suite
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#868685] font-medium hidden sm:block">
+                  Intelligent Financial & Threat Interceptor
+                </p>
               </div>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-                  AiNotif <span className="text-xs px-2 py-0.5 rounded font-mono uppercase bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">Command Center</span>
-                </h1>
-              </div>
-              <p className="text-xs text-slate-400 hidden sm:block">Privacy-first AI Notification Guardian & Financial Ledger</p>
-            </div>
+
+            {/* Pill Navigation Segments */}
+            <nav className="hidden md:flex items-center bg-[#e8ebe6] p-1 rounded-full">
+              {[
+                { id: "overview", label: "Overview" },
+                { id: "transactions", label: "Transactions" },
+                { id: "alerts", label: "Scam Radar", badge: normalizedStats.activeAlerts },
+                { id: "analytics", label: "Insights" },
+                { id: "simulator", label: "Simulator" },
+              ].map((tab) => {
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as any)}
+                    className={`relative px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      isActive
+                        ? "bg-[#163300] text-white shadow-sm"
+                        : "text-[#454745] hover:text-[#163300] hover:bg-white/50"
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    {Boolean(tab.badge && tab.badge > 0) && (
+                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                        isActive ? "bg-[#9fe870] text-[#163300]" : "bg-[#cb272f] text-white"
+                      }`}>
+                        {tab.badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
           </div>
 
-          {/* System Health & Live SSE Indicator */}
-          <div className="flex items-center gap-2 sm:gap-3 text-xs font-mono">
-            {/* Live SSE Stream Badge */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-              <span className={`w-2 h-2 rounded-full ${isLiveStreamActive ? "bg-emerald-400 animate-pulse" : "bg-emerald-600"}`}></span>
-              <span className="hidden sm:inline">Live SSE Stream: Active</span>
-              <span className="sm:hidden">Live</span>
+          {/* Right Action Cluster */}
+          <div className="flex items-center gap-3">
+            {/* Live SSE Stream Indicator */}
+            <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-[#e8ebe6] text-xs font-semibold text-[#163300]">
+              <span className={`w-2.5 h-2.5 rounded-full ${isLiveStreamActive ? "bg-[#9fe870] ring-4 ring-[#9fe870]/30 animate-pulse" : "bg-[#868685]"}`} />
+              <span>{isLiveStreamActive ? "Live Guard Active" : "Syncing Feed"}</span>
             </div>
 
-            {/* Base Currency Dropdown */}
-            <div className="flex items-center gap-1 bg-slate-900 border border-slate-700/60 rounded-lg px-2.5 py-1 text-xs text-slate-300">
-              <span className="hidden md:inline text-slate-400">Base Currency:</span>
+            {/* Base Currency Pill Selector */}
+            <div className="flex items-center bg-white border border-[#e8ebe6] rounded-full px-3 py-1 text-xs font-bold text-[#163300]">
+              <span className="text-[#868685] mr-1.5 font-medium">Base:</span>
               <select
                 value={baseCurrency}
                 onChange={(e) => setBaseCurrency(e.target.value)}
-                className="bg-transparent text-white font-semibold focus:outline-none cursor-pointer"
+                className="bg-transparent font-bold focus:outline-none cursor-pointer pr-1"
               >
-                {Object.keys(RATES_TO_USD).map((c) => (
-                  <option key={c} value={c} className="bg-slate-900 text-white">
-                    {c} ({CURRENCY_SYMBOLS[c] || c})
+                {Object.keys(RATES_TO_USD).map((cur) => (
+                  <option key={cur} value={cur}>
+                    {cur} ({CURRENCY_SYMBOLS[cur] || ""})
                   </option>
                 ))}
               </select>
@@ -581,280 +643,292 @@ export default function Dashboard() {
             {/* Refresh Button */}
             <button
               onClick={fetchData}
-              disabled={loading}
-              title="Refresh Data"
-              className="p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700/60 text-slate-300 hover:text-white transition"
+              title="Refresh Feed"
+              className="w-9 h-9 rounded-full bg-white border border-[#e8ebe6] flex items-center justify-center text-[#163300] hover:bg-[#e8ebe6] transition-colors"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-indigo-400" : ""}`} />
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
             </button>
 
-            {/* Simulator shortcut */}
-            <button
-              onClick={() => setActiveTab("simulator")}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium shadow-md shadow-indigo-600/20 transition"
-            >
-              <Play className="w-3.5 h-3.5 fill-current" />
-              <span className="hidden sm:inline">Simulator</span>
-            </button>
+            {/* User Profile Pill */}
+            <div className="hidden sm:flex items-center gap-2 bg-[#e2f6d5] border border-[#9fe870]/50 rounded-full px-3 py-1.5 text-xs font-bold text-[#163300]">
+              <div className="w-5 h-5 rounded-full bg-[#163300] text-[#9fe870] flex items-center justify-center text-[10px] font-black">
+                U
+              </div>
+              <span className="truncate max-w-[100px]">{userId}</span>
+            </div>
           </div>
+        </div>
+
+        {/* Mobile Navigation Row */}
+        <div className="flex md:hidden items-center justify-between overflow-x-auto gap-1 mt-2.5 pt-2 border-t border-[#e8ebe6] scrollbar-none">
+          {[
+            { id: "overview", label: "Overview" },
+            { id: "transactions", label: "Ledger" },
+            { id: "alerts", label: "Scam Radar", badge: normalizedStats.activeAlerts },
+            { id: "analytics", label: "Insights" },
+            { id: "simulator", label: "Simulator" },
+          ].map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1 ${
+                  isActive ? "bg-[#163300] text-white" : "text-[#454745] hover:bg-[#e8ebe6]"
+                }`}
+              >
+                <span>{tab.label}</span>
+                {Boolean(tab.badge && tab.badge > 0) && (
+                  <span className="bg-[#cb272f] text-white px-1.5 py-0.2 rounded-full text-[10px]">
+                    {tab.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </header>
 
       {/* Main Container */}
-      <div className="max-w-[1920px] mx-auto w-full p-4 md:p-6 space-y-6 flex-1">
-        {/* Normalized KPI Metrics Bar */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4">
-          {/* 1. Total Spent */}
-          <div className="glass-panel rounded-2xl p-4 flex flex-col justify-between border-slate-800/80 hover:border-slate-700 transition">
-            <div className="flex items-center justify-between text-slate-400">
-              <span className="text-xs font-medium">Total Outflow ({baseCurrency})</span>
-              <div className="p-1.5 rounded-lg bg-rose-500/10 text-rose-400">
-                <TrendingDown className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="mt-3">
-              <div className="text-xl sm:text-2xl font-bold tracking-tight text-white font-mono">
-                {symbol}{normalizedStats.totalSpent.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-              </div>
-              <p className="text-[11px] text-slate-400 mt-0.5">Normalized Debit Spend</p>
-            </div>
-          </div>
-
-          {/* 2. Total Inflow */}
-          <div className="glass-panel rounded-2xl p-4 flex flex-col justify-between border-slate-800/80 hover:border-slate-700 transition">
-            <div className="flex items-center justify-between text-slate-400">
-              <span className="text-xs font-medium">Total Inflow ({baseCurrency})</span>
-              <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400">
-                <TrendingUp className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="mt-3">
-              <div className="text-xl sm:text-2xl font-bold tracking-tight text-white font-mono">
-                {symbol}{normalizedStats.totalReceived.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-              </div>
-              <p className="text-[11px] text-slate-400 mt-0.5">Salary & Credit Deposits</p>
-            </div>
-          </div>
-
-          {/* 3. Net Flow */}
-          <div className="glass-panel rounded-2xl p-4 flex flex-col justify-between border-slate-800/80 hover:border-slate-700 transition">
-            <div className="flex items-center justify-between text-slate-400">
-              <span className="text-xs font-medium">Net Delta</span>
-              <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-400">
-                <CreditCard className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="mt-3">
-              <div className={`text-xl sm:text-2xl font-bold tracking-tight font-mono ${normalizedStats.netFlow >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                {normalizedStats.netFlow >= 0 ? "+" : ""}{symbol}{normalizedStats.netFlow.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-              </div>
-              <p className="text-[11px] text-slate-400 mt-0.5">Inflow vs Outflow</p>
-            </div>
-          </div>
-
-          {/* 4. Transactions Count */}
-          <div className="glass-panel rounded-2xl p-4 flex flex-col justify-between border-slate-800/80 hover:border-slate-700 transition">
-            <div className="flex items-center justify-between text-slate-400">
-              <span className="text-xs font-medium">Total Events</span>
-              <div className="p-1.5 rounded-lg bg-cyan-500/10 text-cyan-400">
-                <ArrowLeftRight className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="mt-3">
-              <div className="text-xl sm:text-2xl font-bold tracking-tight text-white font-mono">
-                {normalizedStats.totalTransactions}
-              </div>
-              <p className="text-[11px] text-slate-400 mt-0.5">Parsed Records</p>
-            </div>
-          </div>
-
-          {/* 5. Blocked Scams */}
-          <div className="glass-panel rounded-2xl p-4 flex flex-col justify-between border-slate-800/80 hover:border-slate-700 transition">
-            <div className="flex items-center justify-between text-slate-400">
-              <span className="text-xs font-medium">Threats Blocked</span>
-              <div className="p-1.5 rounded-lg bg-orange-500/10 text-orange-400">
-                <ShieldAlert className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="mt-3">
-              <div className="text-xl sm:text-2xl font-bold tracking-tight text-orange-400 font-mono">
-                {normalizedStats.totalAlerts}
-              </div>
-              <p className="text-[11px] text-slate-400 mt-0.5">{normalizedStats.activeAlerts} Active Threat(s)</p>
-            </div>
-          </div>
-
-          {/* 6. Privacy Shield */}
-          <div className="glass-panel rounded-2xl p-4 flex flex-col justify-between border-slate-800/80 hover:border-slate-700 transition">
-            <div className="flex items-center justify-between text-slate-400">
-              <span className="text-xs font-medium">OTP Shield</span>
-              <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400">
-                <Lock className="w-4 h-4" />
-              </div>
-            </div>
-            <div className="mt-3">
-              <div className="text-lg font-bold text-emerald-400 flex items-center gap-1.5 font-mono">
-                <ShieldCheck className="w-5 h-5" />
-                <span>100% On-Device</span>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-0.5">Zero Leakage Guaranteed</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Navigation Tabs */}
-        <div className="flex items-center justify-between border-b border-slate-800/80 pb-1">
-          <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
-            <button
-              onClick={() => setActiveTab("overview")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition ${
-                activeTab === "overview"
-                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30"
-                  : "text-slate-400 hover:text-white hover:bg-slate-800/60"
-              }`}
-            >
-              <Cpu className="w-4 h-4" />
-              <span>Overview</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab("transactions")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition ${
-                activeTab === "transactions"
-                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30"
-                  : "text-slate-400 hover:text-white hover:bg-slate-800/60"
-              }`}
-            >
-              <CreditCard className="w-4 h-4" />
-              <span>Transactions ({transactions.length})</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab("alerts")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition ${
-                activeTab === "alerts"
-                  ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30"
-                  : "text-slate-400 hover:text-white hover:bg-slate-800/60"
-              }`}
-            >
-              <ShieldAlert className="w-4 h-4" />
-              <span>Security Radar ({alerts.length})</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab("simulator")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition ${
-                activeTab === "simulator"
-                  ? "bg-cyan-600 text-white shadow-lg shadow-cyan-600/30"
-                  : "text-slate-400 hover:text-white hover:bg-slate-800/60"
-              }`}
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>Simulator</span>
-            </button>
-          </div>
-        </div>
-
-        {/* TAB 1: OVERVIEW */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-8 py-8">
+        {/* ======================= OVERVIEW TAB ======================= */}
         {activeTab === "overview" && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-              {/* Left Column (7 cols): Recent Financial Transactions */}
-              <div className="xl:col-span-7 glass-panel rounded-2xl p-6 border-slate-800/80 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400">
-                      <CreditCard className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h2 className="text-base font-semibold text-white">Recent Transactions</h2>
-                      <p className="text-xs text-slate-400">Latest financial activities captured from mobile notifications</p>
-                    </div>
+          <div className="space-y-8 animate-fadeIn">
+            {/* Wise Hero Balance Card */}
+            <div className="wise-hero-dark p-6 sm:p-10 relative overflow-hidden shadow-wise-float">
+              {/* Background ambient pattern */}
+              <div className="absolute -right-12 -bottom-12 w-80 h-80 rounded-full bg-[#9fe870]/10 blur-3xl pointer-events-none" />
+              <div className="absolute top-0 right-0 p-8 hidden lg:block opacity-20 text-[#9fe870] font-mono text-8xl font-black select-none pointer-events-none">
+                WISE
+              </div>
+
+              <div className="relative z-10 max-w-2xl">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-white text-xs font-semibold mb-4 backdrop-blur-sm">
+                  <span className="w-2 h-2 rounded-full bg-[#9fe870]" />
+                  <span>Verified Financial Stream • {baseCurrency}</span>
+                </div>
+
+                <p className="text-white/70 text-sm font-medium uppercase tracking-wider mb-1">
+                  Total Outflow Tracked
+                </p>
+                <h1 className="text-4xl sm:text-6xl font-black text-[#9fe870] tracking-tight mb-4">
+                  {formatCurrency(normalizedStats.totalSpent, baseCurrency)}
+                </h1>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-4 border-t border-white/15">
+                  <div>
+                    <span className="text-white/60 text-xs font-medium block">Total Inflow</span>
+                    <span className="text-lg sm:text-xl font-bold text-white flex items-center gap-1 mt-0.5">
+                      <ArrowDownLeft className="w-4 h-4 text-[#9fe870]" />
+                      {formatCurrency(normalizedStats.totalReceived, baseCurrency)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-white/60 text-xs font-medium block">Net Cash Flow</span>
+                    <span className={`text-lg sm:text-xl font-bold flex items-center gap-1 mt-0.5 ${
+                      normalizedStats.netFlow >= 0 ? "text-[#9fe870]" : "text-[#cb272f]"
+                    }`}>
+                      {normalizedStats.netFlow >= 0 ? (
+                        <ArrowUpRight className="w-4 h-4 text-[#9fe870]" />
+                      ) : (
+                        <ArrowDownLeft className="w-4 h-4 text-[#cb272f]" />
+                      )}
+                      {formatCurrency(normalizedStats.netFlow, baseCurrency)}
+                    </span>
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <span className="text-white/60 text-xs font-medium block">Intercepted Alerts</span>
+                    <span className="text-lg sm:text-xl font-bold text-white flex items-center gap-1 mt-0.5">
+                      <ShieldAlert className="w-4 h-4 text-[#cb272f]" />
+                      {normalizedStats.activeAlerts} Active Threats
+                    </span>
+                  </div>
+                </div>
+
+                {/* Wise Pill Action Buttons */}
+                <div className="flex flex-wrap items-center gap-3 mt-8">
+                  <button
+                    onClick={() => setActiveTab("simulator")}
+                    className="wise-btn-primary gap-2 shadow-sm text-sm"
+                  >
+                    <Play className="w-4 h-4 fill-[#163300]" />
+                    <span>Simulate Notification</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("transactions")}
+                    className="bg-white/10 hover:bg-white/20 text-white font-semibold text-sm px-5 py-2 rounded-full transition-all inline-flex items-center gap-2 backdrop-blur-sm"
+                  >
+                    <span>View Full Ledger</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("alerts")}
+                    className="bg-white/10 hover:bg-white/20 text-white font-semibold text-sm px-5 py-2 rounded-full transition-all inline-flex items-center gap-2 backdrop-blur-sm"
+                  >
+                    <Shield className="w-4 h-4 text-[#9fe870]" />
+                    <span>Security Radar</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Metrics Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Phishing Interception Card */}
+              <div className="wise-card p-6 bg-gradient-to-br from-[#ffffff] to-[#f4f7f2]">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-xs font-bold uppercase tracking-wider text-[#868685]">
+                    Threat Radar
+                  </span>
+                  <span className="p-2 rounded-full bg-[#cb272f]/10 text-[#cb272f]">
+                    <ShieldAlert className="w-5 h-5" />
+                  </span>
+                </div>
+                <div className="text-3xl font-black text-[#163300] mb-1">
+                  {normalizedStats.activeAlerts} Active
+                </div>
+                <p className="text-xs text-[#868685] mb-4">
+                  {alerts.length} total scam notifications analyzed & quarantined
+                </p>
+                <div className="bg-white border border-[#e8ebe6] rounded-xl p-3 flex items-center justify-between text-xs font-bold">
+                  <span className="text-[#454745]">Mean Threat Risk</span>
+                  <span className="text-[#cb272f]">{normalizedStats.avgRiskScore}/100</span>
+                </div>
+              </div>
+
+              {/* Transactions Recorded */}
+              <div className="wise-card p-6 bg-gradient-to-br from-[#ffffff] to-[#f4f7f2]">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-xs font-bold uppercase tracking-wider text-[#868685]">
+                    Activity Volume
+                  </span>
+                  <span className="p-2 rounded-full bg-[#e2f6d5] text-[#163300]">
+                    <CreditCard className="w-5 h-5" />
+                  </span>
+                </div>
+                <div className="text-3xl font-black text-[#163300] mb-1">
+                  {normalizedStats.totalTransactions} Records
+                </div>
+                <p className="text-xs text-[#868685] mb-4">
+                  Multi-currency parsed from SMS & banking notifications
+                </p>
+                <div className="bg-white border border-[#e8ebe6] rounded-xl p-3 flex items-center justify-between text-xs font-bold">
+                  <span className="text-[#454745]">Active Categories</span>
+                  <span className="text-[#163300]">{Object.keys(normalizedStats.categoryBreakdown).length} labels</span>
+                </div>
+              </div>
+
+              {/* Privacy Guardian Status */}
+              <div className="wise-card p-6 bg-gradient-to-br from-[#ffffff] to-[#eaf5e4]">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-xs font-bold uppercase tracking-wider text-[#054d28]">
+                    Zero-Knowledge Shield
+                  </span>
+                  <span className="p-2 rounded-full bg-[#9fe870]/40 text-[#163300]">
+                    <Lock className="w-5 h-5" />
+                  </span>
+                </div>
+                <div className="text-3xl font-black text-[#163300] mb-1">
+                  100% On-Device
+                </div>
+                <p className="text-xs text-[#054d28] mb-4">
+                  Local regex pre-filter drops OTPs & passwords before cloud sync
+                </p>
+                <div className="bg-white border border-[#e8ebe6] rounded-xl p-3 flex items-center justify-between text-xs font-bold">
+                  <span className="text-[#454745]">Credentials Dropped</span>
+                  <span className="text-[#054d28]">Zero Transmitted</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Recent Transactions & Alerts Side-by-Side */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Recent Activity */}
+              <div className="wise-card p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="text-lg font-black text-[#163300]">Recent Spending</h3>
+                    <p className="text-xs text-[#868685]">Live notification feed</p>
                   </div>
                   <button
                     onClick={() => setActiveTab("transactions")}
-                    className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-medium transition"
+                    className="wise-btn-secondary text-xs py-1.5 px-3.5"
                   >
-                    <span>View all ({transactions.length})</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
+                    View All
                   </button>
                 </div>
 
-                <div className="divide-y divide-slate-800/60">
-                  {transactions.slice(0, 6).map((tx) => {
-                    const isNew = newlyAddedIds.has(tx.id);
-                    const converted = convertCurrency(tx.amount, tx.currency || "USD", baseCurrency);
+                <div className="divide-y divide-[#e8ebe6]">
+                  {transactions.slice(0, 5).map((t) => {
+                    const isNew = newlyAddedIds.has(t.id);
                     return (
                       <div
-                        key={tx.id}
+                        key={t.id}
                         onClick={() => {
-                          setInspectedItem({ type: "transaction", item: tx });
-                          setEditMerchant(tx.merchant);
-                          setEditCategory(tx.category);
-                          setEditAmount(tx.amount.toString());
+                          setInspectedItem({ type: "transaction", item: t });
+                          setEditMerchant(t.merchant);
+                          setEditCategory(t.category);
+                          setEditAmount(t.amount.toString());
                         }}
-                        className={`py-3.5 flex items-center justify-between hover:bg-slate-800/30 px-3 rounded-xl cursor-pointer transition ${
-                          isNew ? "bg-indigo-500/20 ring-1 ring-indigo-500 animate-pulse" : ""
+                        className={`py-3.5 flex items-center justify-between group cursor-pointer hover:bg-[#f7f9f6] px-2 rounded-xl transition-all ${
+                          isNew ? "bg-[#e2f6d5]/40 animate-pulse" : ""
                         }`}
                       >
                         <div className="flex items-center gap-3.5">
-                          <div className={`p-2.5 rounded-xl ${
-                            tx.type === "CREDIT"
-                              ? "bg-emerald-500/10 text-emerald-400"
-                              : tx.type === "TRANSFER"
-                              ? "bg-cyan-500/10 text-cyan-400"
-                              : "bg-slate-800 text-slate-300"
-                          }`}>
-                            {tx.type === "CREDIT" ? <ArrowDownLeft className="w-4 h-4" /> : tx.type === "TRANSFER" ? <ArrowLeftRight className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
+                          <div className="w-10 h-10 rounded-full bg-[#e8ebe6] group-hover:bg-[#e2f6d5] flex items-center justify-center transition-colors">
+                            {getMerchantIcon(t.merchant, t.category)}
                           </div>
                           <div>
-                            <div className="font-semibold text-sm text-white flex items-center gap-2">
-                              <span>{tx.merchant}</span>
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-                                {tx.category}
+                            <div className="text-sm font-bold text-[#163300] group-hover:underline">
+                              {t.merchant}
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#e8ebe6] text-[#454745]">
+                                {t.category}
+                              </span>
+                              <span className="text-[11px] text-[#868685]">
+                                {new Date(t.timestamp).toLocaleDateString(undefined, {
+                                  month: "short",
+                                  day: "numeric",
+                                })}
                               </span>
                             </div>
-                            <p className="text-xs text-slate-400 truncate max-w-xs md:max-w-md mt-0.5 font-mono">
-                              {tx.rawNotification}
-                            </p>
                           </div>
                         </div>
+
                         <div className="text-right">
-                          <div className={`font-mono font-bold text-sm ${
-                            tx.type === "CREDIT" ? "text-emerald-400" : "text-slate-100"
+                          <div className={`text-sm font-black ${
+                            t.type === "CREDIT" ? "text-[#054d28]" : "text-[#163300]"
                           }`}>
-                            {tx.type === "CREDIT" ? "+" : "-"}{CURRENCY_SYMBOLS[tx.currency] || tx.currency} {tx.amount.toFixed(2)}
+                            {t.type === "CREDIT" ? "+" : "-"}{CURRENCY_SYMBOLS[t.currency] || ""}{t.amount.toFixed(2)}
                           </div>
-                          {tx.currency !== baseCurrency && (
-                            <div className="text-[11px] text-slate-400 font-mono">
-                              ≈ {symbol}{converted.toFixed(2)}
-                            </div>
-                          )}
+                          <span className="text-[10px] font-semibold text-[#868685] uppercase">
+                            {t.currency}
+                          </span>
                         </div>
                       </div>
                     );
                   })}
+                  {transactions.length === 0 && (
+                    <div className="text-center py-8 text-xs text-[#868685]">
+                      No transactions recorded yet. Run a simulator preset to get started!
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Right Column (5 cols): Security Radar */}
-              <div className="xl:col-span-5 glass-panel rounded-2xl p-6 border-slate-800/80 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="p-2 rounded-lg bg-orange-500/10 text-orange-400">
-                      <ShieldAlert className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h2 className="text-base font-semibold text-white">Active Scam Radar</h2>
-                      <p className="text-xs text-slate-400">Suspicious phishing SMS & unauthorized bank lures</p>
-                    </div>
+              {/* Threat Interceptor Feed */}
+              <div className="wise-card p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="text-lg font-black text-[#163300]">Threat Quarantine</h3>
+                    <p className="text-xs text-[#868685]">Phishing cues & scam detection</p>
                   </div>
                   <button
                     onClick={() => setActiveTab("alerts")}
-                    className="text-xs text-orange-400 hover:text-orange-300 flex items-center gap-1 font-medium transition"
+                    className="wise-btn-secondary text-xs py-1.5 px-3.5"
                   >
-                    <span>View all ({alerts.length})</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
+                    View Radar
                   </button>
                 </div>
 
@@ -862,24 +936,50 @@ export default function Dashboard() {
                   {alerts.slice(0, 4).map((alert) => (
                     <div
                       key={alert.id}
-                      onClick={() => setInspectedItem({ type: "alert", item: alert })}
-                      className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 cursor-pointer transition space-y-2"
+                      className={`p-4 rounded-xl border transition-all ${
+                        alert.isDismissed
+                          ? "bg-[#f7f9f6] border-[#e8ebe6] opacity-60"
+                          : "bg-white border-[#cb272f]/30 shadow-sm"
+                      }`}
                     >
-                      <div className="flex items-center justify-between">
-                        {getRiskBadge(alert.riskScore)}
-                        <span className="text-[11px] text-slate-500 font-mono">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          {getRiskBadge(alert.riskScore)}
+                          {alert.isDismissed && (
+                            <span className="text-[11px] font-bold text-[#868685]">
+                              Dismissed
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[11px] text-[#868685]">
                           {new Date(alert.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                         </span>
                       </div>
-                      <p className="text-xs font-semibold text-white">{alert.reason}</p>
-                      <p className="text-[11px] text-slate-400 line-clamp-2 font-mono bg-slate-950/60 p-2 rounded-lg border border-slate-900">
+
+                      <p className="text-xs font-semibold text-[#163300] mb-2">
+                        {alert.reason}
+                      </p>
+
+                      <p className="text-[11px] text-[#454745] font-mono bg-[#f7f9f6] p-2 rounded-lg border border-[#e8ebe6] truncate">
                         "{alert.rawNotification}"
                       </p>
+
+                      {!alert.isDismissed && (
+                        <div className="mt-3 flex justify-end">
+                          <button
+                            onClick={() => handleDismissAlert(alert.id)}
+                            className="text-[11px] font-bold text-[#163300] hover:text-[#cb272f] underline"
+                          >
+                            Dismiss Threat
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                   {alerts.length === 0 && (
-                    <div className="text-center py-8 text-slate-500 text-xs">
-                      No active security threats detected.
+                    <div className="text-center py-8 text-xs text-[#868685]">
+                      <ShieldCheck className="w-8 h-8 text-[#054d28] mx-auto mb-2" />
+                      No threats detected. Radar is all clear!
                     </div>
                   )}
                 </div>
@@ -888,84 +988,166 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* TAB 2: TRANSACTIONS TAB (WITH BULK ACTIONS & RESPONSIVE CARDS) */}
+        {/* ======================= TRANSACTIONS TAB ======================= */}
         {activeTab === "transactions" && (
-          <div className="space-y-4">
-            {/* Search, Filter & Bulk Controls Toolbar */}
-            <div className="glass-panel rounded-2xl p-4 border-slate-800/80 flex flex-wrap items-center justify-between gap-4">
-              <div className="flex flex-wrap items-center gap-3 flex-1 min-w-[280px]">
-                {/* Search input */}
-                <div className="relative flex-1 min-w-[200px]">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+          <div className="space-y-6 animate-fadeIn">
+            {/* Filter and Search Bar */}
+            <div className="wise-card p-6">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                {/* Search Input */}
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-[#868685] absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     value={txSearch}
                     onChange={(e) => setTxSearch(e.target.value)}
-                    placeholder="Search merchant, text, category..."
-                    className="w-full bg-slate-900/90 border border-slate-700/80 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition"
+                    placeholder="Search merchant, notification content, or category..."
+                    className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-[#d4d8cf] focus:border-[#163300] focus:ring-1 focus:ring-[#163300] text-sm bg-white text-[#163300] placeholder-[#868685] outline-none"
                   />
                   {txSearch && (
-                    <button onClick={() => setTxSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white">
-                      <X className="w-3.5 h-3.5" />
+                    <button
+                      onClick={() => setTxSearch("")}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#868685] hover:text-[#163300]"
+                    >
+                      <X className="w-4 h-4" />
                     </button>
                   )}
                 </div>
 
-                {/* Type Filter */}
-                <div className="flex items-center gap-1 bg-slate-900/90 border border-slate-700/80 rounded-xl p-1 text-xs">
-                  {["ALL", "DEBIT", "CREDIT", "TRANSFER"].map((type) => (
-                    <button
-                      key={type}
-                      onClick={() => setTxTypeFilter(type)}
-                      className={`px-3 py-1 rounded-lg font-medium transition ${
-                        txTypeFilter === type ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white"
-                      }`}
-                    >
-                      {type}
-                    </button>
-                  ))}
-                </div>
+                {/* Sort & Quick Filter Selectors */}
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <select
+                    value={txSort}
+                    onChange={(e) => setTxSort(e.target.value)}
+                    className="px-3.5 py-2 rounded-full border border-[#d4d8cf] text-xs font-bold text-[#163300] bg-white outline-none cursor-pointer"
+                  >
+                    <option value="date_desc">Newest First</option>
+                    <option value="date_asc">Oldest First</option>
+                    <option value="amount_desc">Highest Amount</option>
+                    <option value="amount_asc">Lowest Amount</option>
+                  </select>
 
-                {/* Category Dropdown */}
-                <select
-                  value={txCategoryFilter}
-                  onChange={(e) => setTxCategoryFilter(e.target.value)}
-                  className="bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-indigo-500 cursor-pointer"
-                >
-                  <option value="ALL">All Categories</option>
-                  {uniqueCategories.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
+                  <button
+                    onClick={() => {
+                      setTxTypeFilter("ALL");
+                      setTxCategoryFilter("ALL");
+                      setTxSearch("");
+                    }}
+                    className="wise-btn-secondary text-xs py-2 px-4"
+                  >
+                    Reset Filters
+                  </button>
+                </div>
               </div>
 
-              {/* Sort selector */}
-              <div className="flex items-center gap-2 text-xs text-slate-400">
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span>Sort:</span>
-                <select
-                  value={txSort}
-                  onChange={(e) => setTxSort(e.target.value)}
-                  className="bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
+              {/* Pill Filter Chips Row */}
+              <div className="flex items-center gap-2 overflow-x-auto pt-4 mt-4 border-t border-[#e8ebe6] scrollbar-none">
+                <span className="text-xs font-bold text-[#868685] mr-1">Type:</span>
+                {[
+                  { id: "ALL", label: "All Types" },
+                  { id: "DEBIT", label: "Debit / Outflow" },
+                  { id: "CREDIT", label: "Credit / Inflow" },
+                  { id: "TRANSFER", label: "Transfer" },
+                ].map((type) => (
+                  <button
+                    key={type.id}
+                    onClick={() => setTxTypeFilter(type.id)}
+                    className={`px-3.5 py-1 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+                      txTypeFilter === type.id
+                        ? "bg-[#163300] text-white"
+                        : "bg-[#e8ebe6] text-[#454745] hover:bg-[#d4d8cf]"
+                    }`}
+                  >
+                    {type.label}
+                  </button>
+                ))}
+
+                <span className="text-xs font-bold text-[#868685] ml-4 mr-1">Category:</span>
+                <button
+                  onClick={() => setTxCategoryFilter("ALL")}
+                  className={`px-3.5 py-1 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+                    txCategoryFilter === "ALL"
+                      ? "bg-[#9fe870] text-[#163300] font-black"
+                      : "bg-[#e8ebe6] text-[#454745] hover:bg-[#d4d8cf]"
+                  }`}
                 >
-                  <option value="date_desc">Newest First</option>
-                  <option value="date_asc">Oldest First</option>
-                  <option value="amount_desc">Highest Amount</option>
-                  <option value="amount_asc">Lowest Amount</option>
-                </select>
+                  All
+                </button>
+                {uniqueCategories.map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setTxCategoryFilter(cat)}
+                    className={`px-3.5 py-1 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+                      txCategoryFilter === cat
+                        ? "bg-[#9fe870] text-[#163300] font-black"
+                        : "bg-[#e8ebe6] text-[#454745] hover:bg-[#d4d8cf]"
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* Desktop Table View (Hidden on mobile) */}
-            <div className="hidden md:block glass-panel rounded-2xl border-slate-800/80 overflow-hidden shadow-2xl">
+            {/* Bulk Action Pill Bar (Shown when items selected) */}
+            {selectedTxIds.size > 0 && (
+              <div className="bg-[#163300] text-white p-4 rounded-2xl shadow-wise-float flex flex-wrap items-center justify-between gap-4 animate-slideDown">
+                <div className="flex items-center gap-3">
+                  <span className="bg-[#9fe870] text-[#163300] text-xs font-black px-2.5 py-1 rounded-full">
+                    {selectedTxIds.size} Selected
+                  </span>
+                  <span className="text-xs text-white/80">Perform bulk operations:</span>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <select
+                    value={bulkCategory}
+                    onChange={(e) => setBulkCategory(e.target.value)}
+                    className="px-3 py-1.5 rounded-full text-xs font-bold bg-white/20 text-white border border-white/30 outline-none cursor-pointer"
+                  >
+                    <option value="Groceries" className="text-black">Groceries</option>
+                    <option value="Dining & Coffee" className="text-black">Dining & Coffee</option>
+                    <option value="Salary & Income" className="text-black">Salary & Income</option>
+                    <option value="Utilities" className="text-black">Utilities</option>
+                    <option value="Shopping" className="text-black">Shopping</option>
+                    <option value="Subscriptions" className="text-black">Subscriptions</option>
+                  </select>
+                  <button
+                    onClick={() => handleBulkCategorize(bulkCategory)}
+                    className="wise-btn-primary text-xs py-1.5 px-4"
+                  >
+                    Set Category
+                  </button>
+                  <button
+                    onClick={handleBulkDelete}
+                    className="bg-[#cb272f] hover:bg-red-700 text-white font-bold text-xs px-4 py-1.5 rounded-full transition-all flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
+                  </button>
+                  <button
+                    onClick={() => setSelectedTxIds(new Set())}
+                    className="text-white/60 hover:text-white text-xs underline"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* High Density Wise Ledger Table */}
+            <div className="wise-card overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
+                <table className="w-full text-left text-sm border-collapse">
                   <thead>
-                    <tr className="bg-slate-900/90 border-b border-slate-800 text-slate-400 uppercase tracking-wider text-[11px] font-semibold">
-                      <th className="py-3 px-4 w-10">
+                    <tr className="bg-[#f4f7f2] border-b border-[#e8ebe6] text-[11px] font-black uppercase tracking-wider text-[#868685]">
+                      <th className="p-4 w-12 text-center">
                         <input
                           type="checkbox"
-                          checked={filteredTransactions.length > 0 && selectedTxIds.size === filteredTransactions.length}
+                          checked={
+                            filteredTransactions.length > 0 &&
+                            selectedTxIds.size === filteredTransactions.length
+                          }
                           onChange={(e) => {
                             if (e.target.checked) {
                               setSelectedTxIds(new Set(filteredTransactions.map((t) => t.id)));
@@ -973,32 +1155,30 @@ export default function Dashboard() {
                               setSelectedTxIds(new Set());
                             }
                           }}
-                          className="rounded border-slate-700 text-indigo-600 focus:ring-0 cursor-pointer"
+                          className="rounded border-[#d4d8cf] text-[#163300] focus:ring-[#163300] cursor-pointer"
                         />
                       </th>
-                      <th className="py-3 px-4">Type</th>
-                      <th className="py-3 px-4">Merchant</th>
-                      <th className="py-3 px-4">Category</th>
-                      <th className="py-3 px-4">Notification Preview</th>
-                      <th className="py-3 px-4">Timestamp</th>
-                      <th className="py-3 px-4 text-right">Amount ({baseCurrency})</th>
-                      <th className="py-3 px-4 text-center">Actions</th>
+                      <th className="p-4">Merchant / Entity</th>
+                      <th className="p-4">Category</th>
+                      <th className="p-4">Origin App</th>
+                      <th className="p-4">Timestamp</th>
+                      <th className="p-4 text-right">Amount</th>
+                      <th className="p-4 text-center">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/60 font-normal">
+                  <tbody className="divide-y divide-[#e8ebe6]">
                     {filteredTransactions.map((tx) => {
-                      const isNew = newlyAddedIds.has(tx.id);
                       const isSelected = selectedTxIds.has(tx.id);
-                      const converted = convertCurrency(tx.amount, tx.currency || "USD", baseCurrency);
+                      const isNew = newlyAddedIds.has(tx.id);
 
                       return (
                         <tr
                           key={tx.id}
-                          className={`hover:bg-slate-800/40 transition group cursor-pointer ${
-                            isNew ? "bg-indigo-500/20 ring-1 ring-indigo-500" : ""
-                          } ${isSelected ? "bg-indigo-900/20" : ""}`}
+                          className={`hover:bg-[#f7f9f6] transition-colors ${
+                            isSelected ? "bg-[#e2f6d5]/40" : ""
+                          } ${isNew ? "bg-[#e2f6d5]/60 animate-pulse" : ""}`}
                         >
-                          <td className="py-3 px-4" onClick={(e) => e.stopPropagation()}>
+                          <td className="p-4 text-center">
                             <input
                               type="checkbox"
                               checked={isSelected}
@@ -1008,65 +1188,59 @@ export default function Dashboard() {
                                 else next.delete(tx.id);
                                 setSelectedTxIds(next);
                               }}
-                              className="rounded border-slate-700 text-indigo-600 focus:ring-0 cursor-pointer"
+                              className="rounded border-[#d4d8cf] text-[#163300] focus:ring-[#163300] cursor-pointer"
                             />
                           </td>
-                          <td className="py-3 px-4 whitespace-nowrap" onClick={() => {
-                            setInspectedItem({ type: "transaction", item: tx });
-                            setEditMerchant(tx.merchant);
-                            setEditCategory(tx.category);
-                            setEditAmount(tx.amount.toString());
-                          }}>
-                            <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold ${
-                              tx.type === "CREDIT"
-                                ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                                : tx.type === "TRANSFER"
-                                ? "bg-cyan-500/15 text-cyan-400 border border-cyan-500/30"
-                                : "bg-slate-800 text-slate-300 border border-slate-700"
-                            }`}>
-                              <span>{tx.type}</span>
-                            </span>
+
+                          <td className="p-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-full bg-[#e8ebe6] flex items-center justify-center shrink-0">
+                                {getMerchantIcon(tx.merchant, tx.category)}
+                              </div>
+                              <div>
+                                <span className="font-bold text-[#163300] block">
+                                  {tx.merchant}
+                                </span>
+                                <span className="text-[11px] text-[#868685] font-mono truncate max-w-[240px] block">
+                                  {tx.rawNotification}
+                                </span>
+                              </div>
+                            </div>
                           </td>
-                          <td className="py-3 px-4 font-semibold text-white whitespace-nowrap" onClick={() => {
-                            setInspectedItem({ type: "transaction", item: tx });
-                            setEditMerchant(tx.merchant);
-                            setEditCategory(tx.category);
-                            setEditAmount(tx.amount.toString());
-                          }}>
-                            {tx.merchant}
-                          </td>
-                          <td className="py-3 px-4 whitespace-nowrap" onClick={() => {
-                            setInspectedItem({ type: "transaction", item: tx });
-                            setEditMerchant(tx.merchant);
-                            setEditCategory(tx.category);
-                            setEditAmount(tx.amount.toString());
-                          }}>
-                            <span className="px-2.5 py-0.5 rounded-full bg-slate-800/90 text-slate-300 border border-slate-700/80 font-medium text-[11px]">
+
+                          <td className="p-4">
+                            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-[#e8ebe6] text-[#163300] border border-[#d4d8cf]">
                               {tx.category}
                             </span>
                           </td>
-                          <td className="py-3 px-4 max-w-sm truncate text-slate-400 font-mono text-[11px]" onClick={() => {
-                            setInspectedItem({ type: "transaction", item: tx });
-                            setEditMerchant(tx.merchant);
-                            setEditCategory(tx.category);
-                            setEditAmount(tx.amount.toString());
-                          }}>
-                            {tx.rawNotification}
-                          </td>
-                          <td className="py-3 px-4 whitespace-nowrap text-slate-400 text-[11px]">
-                            {new Date(tx.timestamp).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}
-                          </td>
-                          <td className="py-3 px-4 text-right whitespace-nowrap font-mono">
-                            <span className={`font-bold ${tx.type === "CREDIT" ? "text-emerald-400" : "text-white"}`}>
-                              {tx.type === "CREDIT" ? "+" : "-"}{symbol}{converted.toFixed(2)}
+
+                          <td className="p-4">
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-white border border-[#e8ebe6] text-[#454745]">
+                              {tx.sourcePackage ? tx.sourcePackage.split(".").pop() : "system"}
                             </span>
-                            {tx.currency !== baseCurrency && (
-                              <span className="text-[10px] text-slate-400 ml-1">
-                                ({CURRENCY_SYMBOLS[tx.currency] || tx.currency}{tx.amount.toFixed(2)})
-                              </span>
-                            )}
                           </td>
-                          <td className="py-3 px-4 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+
+                          <td className="p-4 text-xs text-[#868685]">
+                            {new Date(tx.timestamp).toLocaleString(undefined, {
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </td>
+
+                          <td className="p-4 text-right">
+                            <div className={`text-base font-black ${
+                              tx.type === "CREDIT" ? "text-[#054d28]" : "text-[#163300]"
+                            }`}>
+                              {tx.type === "CREDIT" ? "+" : "-"}{CURRENCY_SYMBOLS[tx.currency] || ""}{tx.amount.toFixed(2)}
+                            </div>
+                            <span className="text-[10px] text-[#868685] font-bold uppercase">
+                              {tx.currency}
+                            </span>
+                          </td>
+
+                          <td className="p-4 text-center">
                             <div className="flex items-center justify-center gap-1.5">
                               <button
                                 onClick={() => {
@@ -1075,362 +1249,483 @@ export default function Dashboard() {
                                   setEditCategory(tx.category);
                                   setEditAmount(tx.amount.toString());
                                 }}
-                                className="p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-white"
-                                title="Edit"
+                                title="Inspect & Edit"
+                                className="p-1.5 rounded-full hover:bg-[#e8ebe6] text-[#163300] transition-colors"
                               >
-                                <Edit2 className="w-3.5 h-3.5" />
+                                <Eye className="w-4 h-4" />
                               </button>
                               <button
                                 onClick={() => handleDeleteTransaction(tx.id)}
-                                className="p-1 rounded hover:bg-rose-500/20 text-slate-400 hover:text-rose-400"
-                                title="Delete"
+                                title="Delete Record"
+                                className="p-1.5 rounded-full hover:bg-[#cb272f]/10 text-[#cb272f] transition-colors"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Trash2 className="w-4 h-4" />
                               </button>
                             </div>
                           </td>
                         </tr>
                       );
                     })}
+                    {filteredTransactions.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="p-12 text-center text-sm text-[#868685]">
+                          No transactions found matching the filter criteria.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
             </div>
+          </div>
+        )}
 
-            {/* Mobile / Tablet Responsive Card View (Visible only on small screens) */}
-            <div className="block md:hidden space-y-3">
-              {filteredTransactions.map((tx) => {
-                const isNew = newlyAddedIds.has(tx.id);
-                const isSelected = selectedTxIds.has(tx.id);
-                const converted = convertCurrency(tx.amount, tx.currency || "USD", baseCurrency);
+        {/* ======================= SCAM RADAR TAB ======================= */}
+        {activeTab === "alerts" && (
+          <div className="space-y-6 animate-fadeIn">
+            {/* Header Radar Banner */}
+            <div className="wise-card p-6 bg-gradient-to-r from-white via-[#fff5f5] to-white border-[#cb272f]/20">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-full bg-[#cb272f]/10 flex items-center justify-center text-[#cb272f]">
+                    <ShieldAlert className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-black text-[#163300]">
+                      Phishing & Threat Quarantine Radar
+                    </h2>
+                    <p className="text-xs text-[#868685]">
+                      Interception log with AI threat analysis, urgency detection, and URL inspection
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setAlertStatusFilter("ALL")}
+                    className={`px-3 py-1 rounded-full text-xs font-bold ${
+                      alertStatusFilter === "ALL" ? "bg-[#163300] text-white" : "bg-[#e8ebe6] text-[#454745]"
+                    }`}
+                  >
+                    All ({alerts.length})
+                  </button>
+                  <button
+                    onClick={() => setAlertStatusFilter("ACTIVE")}
+                    className={`px-3 py-1 rounded-full text-xs font-bold ${
+                      alertStatusFilter === "ACTIVE" ? "bg-[#cb272f] text-white" : "bg-[#e8ebe6] text-[#454745]"
+                    }`}
+                  >
+                    Active Only ({normalizedStats.activeAlerts})
+                  </button>
+                  <button
+                    onClick={() => setAlertStatusFilter("DISMISSED")}
+                    className={`px-3 py-1 rounded-full text-xs font-bold ${
+                      alertStatusFilter === "DISMISSED" ? "bg-[#163300] text-white" : "bg-[#e8ebe6] text-[#454745]"
+                    }`}
+                  >
+                    Dismissed
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Alerts List */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {filteredAlerts.map((alert) => {
+                const cues = parseCues(alert.phishingCues);
 
                 return (
                   <div
-                    key={tx.id}
-                    onClick={() => {
-                      setInspectedItem({ type: "transaction", item: tx });
-                      setEditMerchant(tx.merchant);
-                      setEditCategory(tx.category);
-                      setEditAmount(tx.amount.toString());
-                    }}
-                    className={`glass-panel rounded-2xl p-4 border-slate-800 space-y-2 cursor-pointer transition ${
-                      isNew ? "bg-indigo-500/20 ring-1 ring-indigo-500" : ""
-                    } ${isSelected ? "border-indigo-500" : ""}`}
+                    key={alert.id}
+                    className={`wise-card p-6 flex flex-col justify-between transition-all ${
+                      alert.isDismissed
+                        ? "opacity-60 bg-[#f7f9f6] border-[#e8ebe6]"
+                        : "border-[#cb272f]/30 hover:border-[#cb272f] shadow-sm"
+                    }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => {
-                            const next = new Set(selectedTxIds);
-                            if (e.target.checked) next.add(tx.id);
-                            else next.delete(tx.id);
-                            setSelectedTxIds(next);
-                          }}
-                          className="rounded border-slate-700 text-indigo-600 focus:ring-0"
-                        />
-                        <span className="font-bold text-white text-sm">{tx.merchant}</span>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
-                          {tx.category}
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          {getRiskBadge(alert.riskScore)}
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-[#e8ebe6] text-[#454745]">
+                            {alert.sourcePackage ? alert.sourcePackage.split(".").pop() : "sms"}
+                          </span>
+                        </div>
+                        <span className="text-xs text-[#868685]">
+                          {new Date(alert.timestamp).toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
                         </span>
                       </div>
-                      <div className="text-right font-mono">
-                        <span className={`font-bold text-sm ${tx.type === "CREDIT" ? "text-emerald-400" : "text-white"}`}>
-                          {tx.type === "CREDIT" ? "+" : "-"}{symbol}{converted.toFixed(2)}
+
+                      <h4 className="text-base font-bold text-[#163300] mb-2">
+                        {alert.reason}
+                      </h4>
+
+                      <div className="bg-[#f4f7f2] p-3 rounded-xl border border-[#e8ebe6] mb-4">
+                        <span className="text-[10px] uppercase font-bold text-[#868685] block mb-1">
+                          Captured Notification
                         </span>
+                        <p className="text-xs font-mono text-[#163300] break-words">
+                          "{alert.rawNotification}"
+                        </p>
                       </div>
+
+                      {/* Phishing Cues */}
+                      {cues.length > 0 && (
+                        <div className="mb-4">
+                          <span className="text-[10px] uppercase font-bold text-[#868685] block mb-1.5">
+                            Identified Threat Cues
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {cues.map((cue, idx) => (
+                              <span
+                                key={idx}
+                                className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#cb272f]/10 text-[#cb272f] border border-[#cb272f]/20"
+                              >
+                                {cue}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
-                    <p className="text-xs text-slate-400 font-mono truncate">{tx.rawNotification}</p>
-
-                    <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-800/60">
-                      <span>{new Date(tx.timestamp).toLocaleDateString()}</span>
+                    <div className="pt-4 border-t border-[#e8ebe6] flex items-center justify-between">
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteTransaction(tx.id);
-                        }}
-                        className="text-rose-400 hover:text-rose-300 text-xs"
+                        onClick={() => copyText(alert.rawNotification, alert.id)}
+                        className="text-xs font-bold text-[#454745] hover:text-[#163300] flex items-center gap-1.5"
                       >
-                        Delete
+                        {copiedId === alert.id ? <Check className="w-3.5 h-3.5 text-[#054d28]" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedId === alert.id ? "Copied" : "Copy Payload"}</span>
                       </button>
+
+                      {!alert.isDismissed ? (
+                        <button
+                          onClick={() => handleDismissAlert(alert.id)}
+                          className="wise-btn-secondary text-xs py-1 px-3.5"
+                        >
+                          Dismiss Threat
+                        </button>
+                      ) : (
+                        <span className="text-xs font-bold text-[#868685]">Resolved</span>
+                      )}
                     </div>
                   </div>
                 );
               })}
-            </div>
-
-            {/* Floating Bulk Actions Toolbar */}
-            {selectedTxIds.size > 0 && (
-              <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 glass-panel rounded-2xl p-3 border-indigo-500/50 shadow-2xl bg-slate-900/95 flex items-center gap-4">
-                <span className="text-xs font-semibold text-white px-2">
-                  {selectedTxIds.size} selected
-                </span>
-
-                <div className="flex items-center gap-2">
-                  <select
-                    value={bulkCategory}
-                    onChange={(e) => setBulkCategory(e.target.value)}
-                    className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white"
-                  >
-                    {["Food & Dining", "Groceries", "Shopping", "Transport & Travel", "Bills & Utilities", "Entertainment", "Income", "General"].map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-
-                  <button
-                    onClick={() => handleBulkCategorize(bulkCategory)}
-                    className="px-3 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition"
-                  >
-                    Apply Category
-                  </button>
-
-                  <button
-                    onClick={handleBulkDelete}
-                    className="px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-medium transition flex items-center gap-1"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                    <span>Delete</span>
-                  </button>
-
-                  <button
-                    onClick={() => setSelectedTxIds(new Set())}
-                    className="text-xs text-slate-400 hover:text-white px-2"
-                  >
-                    Clear
-                  </button>
+              {filteredAlerts.length === 0 && (
+                <div className="col-span-2 wise-card p-12 text-center text-sm text-[#868685]">
+                  <ShieldCheck className="w-10 h-10 text-[#054d28] mx-auto mb-2" />
+                  No threats found matching current radar filters.
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
 
-        {/* TAB 3: RADAR (ALERTS) */}
-        {activeTab === "alerts" && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredAlerts.map((alert) => (
-                <div
-                  key={alert.id}
-                  onClick={() => setInspectedItem({ type: "alert", item: alert })}
-                  className="glass-panel rounded-2xl p-5 border-slate-800/80 hover:border-slate-700 cursor-pointer transition space-y-3"
-                >
-                  <div className="flex items-center justify-between">
-                    {getRiskBadge(alert.riskScore)}
-                    <span className="text-xs text-slate-500 font-mono">
-                      {new Date(alert.timestamp).toLocaleDateString()}
+        {/* ======================= ANALYTICS TAB ======================= */}
+        {activeTab === "analytics" && (
+          <div className="space-y-8 animate-fadeIn">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="wise-card p-6">
+                <span className="text-xs font-bold uppercase text-[#868685] block mb-1">
+                  Total Flow Analysed
+                </span>
+                <div className="text-3xl font-black text-[#163300]">
+                  {formatCurrency(normalizedStats.totalSpent + normalizedStats.totalReceived, baseCurrency)}
+                </div>
+                <p className="text-xs text-[#868685] mt-1">Aggregate combined volume in {baseCurrency}</p>
+              </div>
+
+              <div className="wise-card p-6">
+                <span className="text-xs font-bold uppercase text-[#868685] block mb-1">
+                  Debit to Inflow Ratio
+                </span>
+                <div className="text-3xl font-black text-[#163300]">
+                  {normalizedStats.totalReceived > 0
+                    ? ((normalizedStats.totalSpent / normalizedStats.totalReceived) * 100).toFixed(1) + "%"
+                    : "100%"}
+                </div>
+                <p className="text-xs text-[#868685] mt-1">Outflow as percentage of total received</p>
+              </div>
+
+              <div className="wise-card p-6">
+                <span className="text-xs font-bold uppercase text-[#868685] block mb-1">
+                  Threat Ratio
+                </span>
+                <div className="text-3xl font-black text-[#cb272f]">
+                  {normalizedStats.totalTransactions > 0
+                    ? ((alerts.length / (normalizedStats.totalTransactions + alerts.length)) * 100).toFixed(1) + "%"
+                    : "0%"}
+                </div>
+                <p className="text-xs text-[#868685] mt-1">Scam messages intercepted vs legit notifications</p>
+              </div>
+            </div>
+
+            {/* Category Breakdown Progress Bars */}
+            <div className="wise-card p-8">
+              <h3 className="text-xl font-black text-[#163300] mb-6">
+                Expense Distribution by Category
+              </h3>
+
+              <div className="space-y-6">
+                {Object.entries(normalizedStats.categoryBreakdown)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([cat, amount], idx) => {
+                    const pct = normalizedStats.totalSpent > 0 ? (amount / normalizedStats.totalSpent) * 100 : 0;
+                    const colors = ["#163300", "#9fe870", "#054d28", "#0b4c72", "#454745", "#6a6c6a"];
+                    const barColor = colors[idx % colors.length];
+
+                    return (
+                      <div key={cat} className="space-y-1.5">
+                        <div className="flex items-center justify-between text-sm font-bold">
+                          <span className="text-[#163300]">{cat}</span>
+                          <span className="text-[#454745]">
+                            {formatCurrency(amount, baseCurrency)} ({pct.toFixed(1)}%)
+                          </span>
+                        </div>
+                        <div className="w-full h-3 rounded-full bg-[#e8ebe6] overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${Math.max(pct, 2)}%`, backgroundColor: barColor }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                {Object.keys(normalizedStats.categoryBreakdown).length === 0 && (
+                  <p className="text-center text-xs text-[#868685] py-8">
+                    No expense data available to graph.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ======================= SIMULATOR TAB ======================= */}
+        {activeTab === "simulator" && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fadeIn">
+            {/* Left Control Panel */}
+            <div className="lg:col-span-6 space-y-6">
+              <div className="wise-card p-6">
+                <h3 className="text-lg font-black text-[#163300] mb-1">
+                  Interactive Notification Simulator
+                </h3>
+                <p className="text-xs text-[#868685] mb-4">
+                  Select a live financial or phishing scenario, or craft custom payload to test AI extraction and local regex OTP drops.
+                </p>
+
+                {/* Presets Pills */}
+                <div className="space-y-2 mb-6">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#868685] block">
+                    Instant Test Presets
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {PRESETS.map((preset, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => {
+                          setSimTitle(preset.title);
+                          setSimText(preset.text);
+                          setSimPackage(preset.packageName);
+                        }}
+                        className="px-3 py-1.5 rounded-full text-xs font-bold bg-[#f4f7f2] hover:bg-[#e2f6d5] border border-[#d4d8cf] text-[#163300] transition-colors text-left"
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Form Fields */}
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-xs font-bold text-[#163300] block mb-1">
+                      Notification Title / Sender
+                    </label>
+                    <input
+                      type="text"
+                      value={simTitle}
+                      onChange={(e) => setSimTitle(e.target.value)}
+                      className="w-full px-3.5 py-2 rounded-xl border border-[#d4d8cf] focus:border-[#163300] text-sm text-[#163300] outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-[#163300] block mb-1">
+                      Notification Content
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={simText}
+                      onChange={(e) => setSimText(e.target.value)}
+                      className="w-full px-3.5 py-2 rounded-xl border border-[#d4d8cf] focus:border-[#163300] text-sm text-[#163300] outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-bold text-[#163300] block mb-1">
+                      Source Package Name
+                    </label>
+                    <input
+                      type="text"
+                      value={simPackage}
+                      onChange={(e) => setSimPackage(e.target.value)}
+                      className="w-full px-3.5 py-2 rounded-xl border border-[#d4d8cf] focus:border-[#163300] text-xs font-mono text-[#163300] outline-none"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleRunSimulator}
+                    disabled={simLoading}
+                    className="w-full wise-btn-primary gap-2 py-3 shadow-md mt-4"
+                  >
+                    {simLoading ? (
+                      <RefreshCw className="w-4 h-4 animate-spin text-[#163300]" />
+                    ) : (
+                      <Play className="w-4 h-4 fill-[#163300]" />
+                    )}
+                    <span>{simLoading ? "Evaluating AI Guardian..." : "Process Notification Event"}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Live Preview / Result */}
+            <div className="lg:col-span-6 space-y-6">
+              {/* Phone Mock / Notification Preview */}
+              <div className="wise-card p-6">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#868685] block mb-3">
+                  Mobile OS Notification Mock
+                </span>
+                <div className="bg-white rounded-2xl border-2 border-[#163300] p-4 shadow-sm flex items-start gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-[#163300] text-[#9fe870] flex items-center justify-center font-black text-lg shrink-0">
+                    <Smartphone className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between text-xs text-[#868685] mb-0.5">
+                      <span className="font-bold text-[#163300]">{simTitle}</span>
+                      <span>Now</span>
+                    </div>
+                    <p className="text-xs text-[#454745] font-medium leading-relaxed break-words">
+                      {simText}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Engine Response */}
+              {simResult && (
+                <div className="wise-card p-6 animate-fadeIn">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-sm font-black text-[#163300]">
+                      AI Guardian Outcome
+                    </h4>
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#e2f6d5] text-[#163300]">
+                      Status: {simResult.outcome || (simResult.error ? "Error" : "Processed")}
                     </span>
                   </div>
 
-                  <h3 className="text-sm font-bold text-white">{alert.reason}</h3>
-
-                  <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-900 text-xs font-mono text-rose-300">
-                    "{alert.rawNotification}"
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDismissAlert(alert.id);
-                      }}
-                      className="text-xs text-slate-400 hover:text-white flex items-center gap-1"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>{alert.isDismissed ? "Dismissed" : "Dismiss Alert"}</span>
-                    </button>
-
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        copyText(alert.rawNotification, alert.id);
-                      }}
-                      className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
-                    >
-                      {copiedId === alert.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>Copy</span>
-                    </button>
+                  <div className="bg-[#163300] text-white p-4 rounded-xl font-mono text-xs overflow-x-auto max-h-80">
+                    <pre>{JSON.stringify(simResult, null, 2)}</pre>
                   </div>
                 </div>
-              ))}
+              )}
             </div>
           </div>
         )}
+      </main>
 
-        {/* TAB 4: SIMULATOR */}
-        {activeTab === "simulator" && (
-          <div className="max-w-2xl mx-auto glass-panel rounded-2xl p-6 border-slate-800/80 space-y-5">
-            <div>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-cyan-400" />
-                <span>Live Notification Simulator</span>
-              </h2>
-              <p className="text-xs text-slate-400">Inject mock notifications directly into the processing pipeline.</p>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-slate-400">Select Preset:</label>
-              <div className="flex flex-wrap gap-2">
-                {PRESETS.map((p, i) => (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      setSimTitle(p.title);
-                      setSimText(p.text);
-                      setSimPackage(p.packageName);
-                    }}
-                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 transition"
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-medium text-slate-400">Notification Title / Sender:</label>
-                <input
-                  type="text"
-                  value={simTitle}
-                  onChange={(e) => setSimTitle(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 mt-1"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-slate-400">Notification Content:</label>
-                <textarea
-                  rows={3}
-                  value={simText}
-                  onChange={(e) => setSimText(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 mt-1"
-                />
-              </div>
-            </div>
-
+      {/* Slide-over Inspector Modal */}
+      {inspectedItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fadeIn">
+          <div className="wise-card bg-white max-w-lg w-full p-6 shadow-wise-float relative max-h-[90vh] overflow-y-auto">
             <button
-              onClick={handleRunSimulator}
-              disabled={simLoading}
-              className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm transition flex items-center justify-center gap-2"
+              onClick={() => setInspectedItem(null)}
+              className="absolute top-5 right-5 text-[#868685] hover:text-[#163300] p-1 rounded-full hover:bg-[#e8ebe6]"
             >
-              {simLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />}
-              <span>Process Notification</span>
+              <X className="w-5 h-5" />
             </button>
 
-            {simResult && (
-              <div className="p-4 rounded-xl bg-slate-900/90 border border-slate-800 text-xs font-mono space-y-2">
-                <span className="font-bold text-slate-300">Pipeline Output:</span>
-                <pre className="text-slate-400 overflow-x-auto text-[11px]">
-                  {JSON.stringify(simResult, null, 2)}
-                </pre>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* INSPECTOR & TRANSACTION EDIT MODAL */}
-      {inspectedItem && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="glass-panel rounded-2xl max-w-lg w-full p-6 border-slate-800 space-y-5 bg-slate-950">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                {inspectedItem.type === "transaction" ? <CreditCard className="w-4 h-4 text-indigo-400" /> : <ShieldAlert className="w-4 h-4 text-orange-400" />}
-                <span>{inspectedItem.type === "transaction" ? "Transaction Inspector & Editor" : "Threat Inspector"}</span>
-              </h3>
-              <button onClick={() => setInspectedItem(null)} className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {inspectedItem.type === "transaction" ? (
-              <div className="space-y-4 text-xs">
-                <div>
-                  <label className="text-slate-400 font-medium">Merchant:</label>
-                  <input
-                    type="text"
-                    value={editMerchant}
-                    onChange={(e) => setEditMerchant(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white mt-1"
-                  />
+            {inspectedItem.type === "transaction" && (
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="px-3 py-1 rounded-full text-xs font-black bg-[#163300] text-white">
+                    Edit Record
+                  </span>
+                  <span className="text-xs text-[#868685] font-mono">
+                    ID: {inspectedItem.item.id.slice(0, 8)}...
+                  </span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-4">
                   <div>
-                    <label className="text-slate-400 font-medium">Category:</label>
-                    <select
-                      value={editCategory}
-                      onChange={(e) => setEditCategory(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white mt-1 cursor-pointer"
-                    >
-                      {["Food & Dining", "Groceries", "Shopping", "Transport & Travel", "Bills & Utilities", "Entertainment", "Income", "Transfers", "General"].map((c) => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-slate-400 font-medium">Amount ({(inspectedItem.item as Transaction).currency}):</label>
+                    <label className="text-xs font-bold text-[#163300] block mb-1">
+                      Merchant Name
+                    </label>
                     <input
-                      type="number"
-                      step="0.01"
-                      value={editAmount}
-                      onChange={(e) => setEditAmount(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-white mt-1 font-mono"
+                      type="text"
+                      value={editMerchant}
+                      onChange={(e) => setEditMerchant(e.target.value)}
+                      className="w-full px-3.5 py-2 rounded-xl border border-[#d4d8cf] text-sm text-[#163300] outline-none"
                     />
                   </div>
-                </div>
 
-                <div>
-                  <label className="text-slate-400 font-medium">Original Intercepted Text:</label>
-                  <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 font-mono text-slate-300 mt-1 break-all">
-                    {inspectedItem.item.rawNotification}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs font-bold text-[#163300] block mb-1">
+                        Category
+                      </label>
+                      <input
+                        type="text"
+                        value={editCategory}
+                        onChange={(e) => setEditCategory(e.target.value)}
+                        className="w-full px-3.5 py-2 rounded-xl border border-[#d4d8cf] text-sm text-[#163300] outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-[#163300] block mb-1">
+                        Amount
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editAmount}
+                        onChange={(e) => setEditAmount(e.target.value)}
+                        className="w-full px-3.5 py-2 rounded-xl border border-[#d4d8cf] text-sm text-[#163300] outline-none"
+                      />
+                    </div>
                   </div>
-                </div>
 
-                <div className="flex items-center justify-between pt-2">
-                  <button
-                    onClick={() => handleDeleteTransaction(inspectedItem.item.id)}
-                    className="px-3 py-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white font-medium transition"
-                  >
-                    Delete Transaction
-                  </button>
-
-                  <button
-                    onClick={handleSaveInspectedTransaction}
-                    disabled={isSavingEdit}
-                    className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition"
-                  >
-                    {isSavingEdit ? "Saving..." : "Save Changes"}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4 text-xs">
-                <div className="flex items-center gap-2">
-                  {getRiskBadge((inspectedItem.item as SuspiciousAlert).riskScore)}
-                  <span className="text-slate-400 font-mono">Score: {(inspectedItem.item as SuspiciousAlert).riskScore}/100</span>
-                </div>
-                <div>
-                  <label className="text-slate-400 font-medium">Interception Reason:</label>
-                  <p className="text-white text-sm font-semibold mt-1">{(inspectedItem.item as SuspiciousAlert).reason}</p>
-                </div>
-                <div>
-                  <label className="text-slate-400 font-medium">Raw Intercepted Text:</label>
-                  <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 font-mono text-rose-300 mt-1 break-all">
-                    {inspectedItem.item.rawNotification}
+                  <div className="bg-[#f4f7f2] p-3 rounded-xl border border-[#e8ebe6]">
+                    <span className="text-[10px] uppercase font-bold text-[#868685] block mb-1">
+                      Original Notification Intercepted
+                    </span>
+                    <p className="text-xs font-mono text-[#163300] break-words">
+                      "{(inspectedItem.item as Transaction).rawNotification}"
+                    </p>
                   </div>
-                </div>
-                <div className="flex justify-end pt-2">
-                  <button
-                    onClick={() => setInspectedItem(null)}
-                    className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white"
-                  >
-                    Close
-                  </button>
+
+                  <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#e8ebe6]">
+                    <button
+                      onClick={() => setInspectedItem(null)}
+                      className="wise-btn-secondary text-xs py-2 px-4"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveInspectedTransaction}
+                      disabled={isSavingEdit}
+                      className="wise-btn-primary text-xs py-2 px-5"
+                    >
+                      {isSavingEdit ? "Saving..." : "Save Changes"}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

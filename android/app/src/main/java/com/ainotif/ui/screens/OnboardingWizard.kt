@@ -2,6 +2,7 @@ package com.ainotif.ui.screens
 
 import android.content.Intent
 import android.provider.Settings
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.ainotif.service.AppFilterManager
+import com.ainotif.ui.theme.*
 import kotlinx.coroutines.launch
 
 @Composable
@@ -46,7 +48,7 @@ fun OnboardingWizard(
                 .fillMaxSize()
                 .padding(16.dp),
             shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface
+            color = WisePaper
         ) {
             Column(
                 modifier = Modifier
@@ -65,10 +67,14 @@ fun OnboardingWizard(
                     Text(
                         text = "AiNotif Setup",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = WiseForestInk
                     )
-                    TextButton(onClick = onComplete) {
-                        Text("Skip")
+                    TextButton(
+                        onClick = onComplete,
+                        colors = ButtonDefaults.textButtonColors(contentColor = WiseCharcoal)
+                    ) {
+                        Text("Skip", fontWeight = FontWeight.SemiBold)
                     }
                 }
 
@@ -86,7 +92,7 @@ fun OnboardingWizard(
                     }
                 }
 
-                // Page indicator dots
+                // Page indicator dots / pills
                 Row(
                     modifier = Modifier
                         .padding(vertical = 16.dp),
@@ -97,11 +103,11 @@ fun OnboardingWizard(
                         val isSelected = pagerState.currentPage == index
                         Box(
                             modifier = Modifier
-                                .size(if (isSelected) 10.dp else 8.dp)
-                                .clip(CircleShape)
+                                .size(width = if (isSelected) 24.dp else 8.dp, height = 8.dp)
+                                .clip(RoundedCornerShape(percent = 50))
                                 .background(
-                                    if (isSelected) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.outlineVariant
+                                    if (isSelected) WiseForestInk
+                                    else WisePebble.copy(alpha = 0.35f)
                                 )
                         )
                     }
@@ -119,9 +125,11 @@ fun OnboardingWizard(
                                     pagerState.animateScrollToPage(pagerState.currentPage - 1)
                                 }
                             },
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(percent = 50),
+                            border = BorderStroke(1.dp, WisePebble.copy(alpha = 0.35f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = WiseForestInk)
                         ) {
-                            Text("Back")
+                            Text("Back", fontWeight = FontWeight.SemiBold)
                         }
                     } else {
                         Spacer(modifier = Modifier.width(8.dp))
@@ -137,9 +145,16 @@ fun OnboardingWizard(
                                 onComplete()
                             }
                         },
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(percent = 50),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = WiseForestInk,
+                            contentColor = WisePaper
+                        )
                     ) {
-                        Text(if (pagerState.currentPage == 2) "Get Started" else "Next")
+                        Text(
+                            text = if (pagerState.currentPage == 2) "Get Started" else "Next",
+                            fontWeight = FontWeight.Bold
+                        )
                         Spacer(modifier = Modifier.width(6.dp))
                         Icon(
                             if (pagerState.currentPage == 2) Icons.Default.Check else Icons.Default.ArrowForward,
@@ -166,13 +181,13 @@ private fun OnboardingStep1Privacy() {
             modifier = Modifier
                 .size(90.dp)
                 .clip(CircleShape)
-                .background(Color(0xFF10B981).copy(alpha = 0.15f)),
+                .background(WiseLinenMist),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 Icons.Default.VerifiedUser,
                 contentDescription = null,
-                tint = Color(0xFF10B981),
+                tint = WiseForestInk,
                 modifier = Modifier.size(48.dp)
             )
         }
@@ -183,6 +198,7 @@ private fun OnboardingStep1Privacy() {
             text = "Zero-Knowledge Privacy Promise",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
+            color = WiseForestInk,
             textAlign = TextAlign.Center
         )
 
@@ -191,7 +207,7 @@ private fun OnboardingStep1Privacy() {
         Text(
             text = "Your privacy is paramount. AiNotif uses a strict on-device regex gate that instantly discards one-time passwords (OTPs), 2FA codes, and credentials before anything is logged or analyzed.\n\nNo sensitive credentials ever leave your phone.",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+            color = WiseCharcoal,
             textAlign = TextAlign.Center,
             lineHeight = 22.sp
         )
@@ -211,13 +227,13 @@ private fun OnboardingStep2Permission(onOpenSettings: () -> Unit) {
             modifier = Modifier
                 .size(90.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                .background(WiseLinenMist),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 Icons.Default.NotificationsActive,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = WiseForestInk,
                 modifier = Modifier.size(48.dp)
             )
         }
@@ -228,6 +244,7 @@ private fun OnboardingStep2Permission(onOpenSettings: () -> Unit) {
             text = "Notification Access",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
+            color = WiseForestInk,
             textAlign = TextAlign.Center
         )
 
@@ -236,7 +253,7 @@ private fun OnboardingStep2Permission(onOpenSettings: () -> Unit) {
         Text(
             text = "To automatically parse bank purchases and intercept SMS phishing attacks in real time, AiNotif needs Android Notification Listener permission.",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+            color = WiseCharcoal,
             textAlign = TextAlign.Center,
             lineHeight = 22.sp
         )
@@ -245,11 +262,15 @@ private fun OnboardingStep2Permission(onOpenSettings: () -> Unit) {
 
         Button(
             onClick = onOpenSettings,
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(percent = 50),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = WiseForestInk,
+                contentColor = WisePaper
+            )
         ) {
-            Icon(Icons.Default.Settings, contentDescription = null)
+            Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Enable Notification Access")
+            Text("Enable Notification Access", fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -266,7 +287,8 @@ private fun OnboardingStep3Apps(appFilterManager: AppFilterManager) {
         Text(
             text = "Choose Apps to Monitor",
             style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            color = WiseForestInk
         )
 
         Spacer(modifier = Modifier.height(6.dp))
@@ -274,7 +296,7 @@ private fun OnboardingStep3Apps(appFilterManager: AppFilterManager) {
         Text(
             text = "Select the financial and messaging apps AiNotif is permitted to scan. Non-selected apps are ignored completely.",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            color = WiseCharcoal
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -286,13 +308,13 @@ private fun OnboardingStep3Apps(appFilterManager: AppFilterManager) {
             items(apps, key = { it.packageName }) { appInfo ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = WiseFog.copy(alpha = 0.5f))
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
@@ -300,12 +322,13 @@ private fun OnboardingStep3Apps(appFilterManager: AppFilterManager) {
                             Text(
                                 text = appInfo.appName,
                                 fontWeight = FontWeight.SemiBold,
-                                fontSize = 14.sp
+                                fontSize = 14.sp,
+                                color = WiseForestInk
                             )
                             Text(
                                 text = if (appInfo.isInstalled) "Installed" else "Supported",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = if (appInfo.isInstalled) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                color = if (appInfo.isInstalled) WiseSpruce else WisePebble
                             )
                         }
 
@@ -314,7 +337,11 @@ private fun OnboardingStep3Apps(appFilterManager: AppFilterManager) {
                             onCheckedChange = { checked ->
                                 appFilterManager.setAppMonitored(appInfo.packageName, checked)
                                 apps = appFilterManager.getAllMonitoredApps()
-                            }
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = WisePaper,
+                                checkedTrackColor = WiseForestInk
+                            )
                         )
                     }
                 }

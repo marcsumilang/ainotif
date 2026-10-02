@@ -29,15 +29,15 @@ import kotlinx.coroutines.launch
 import java.util.Calendar
 
 private val CHART_COLORS = listOf(
-    Color(0xFF3B82F6), // Blue
-    Color(0xFF10B981), // Emerald
-    Color(0xFFF59E0B), // Amber
-    Color(0xFFEC4899), // Pink
-    Color(0xFF8B5CF6), // Purple
-    Color(0xFF06B6D4), // Cyan
-    Color(0xFFF97316), // Orange
-    Color(0xFF64748B), // Slate
-    Color(0xFF14B8A6)  // Teal
+    com.ainotif.ui.theme.WiseForestInk,
+    com.ainotif.ui.theme.WiseLimeVoltage,
+    com.ainotif.ui.theme.WiseSpruce,
+    com.ainotif.ui.theme.WiseSignalBlue,
+    com.ainotif.ui.theme.WiseCharcoal,
+    com.ainotif.ui.theme.WiseSlate,
+    com.ainotif.ui.theme.WiseAlarmRed,
+    Color(0xFF235414),
+    Color(0xFF7C8D75)
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -140,18 +140,25 @@ fun StatsScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Period Selector Chips
+            // Period Selector Chips (Wise Pill Chips)
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
+                    val chipShape = RoundedCornerShape(percent = 50)
+                    val chipColors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = com.ainotif.ui.theme.WiseLimeVoltage,
+                        selectedLabelColor = com.ainotif.ui.theme.WiseForestInk
+                    )
+
                     listOf("7D", "30D", "90D", "YTD", "ALL").forEach { period ->
                         FilterChip(
                             selected = selectedPeriod == period,
                             onClick = { selectedPeriod = period },
-                            label = { Text(period, fontWeight = FontWeight.SemiBold) },
-                            shape = RoundedCornerShape(8.dp)
+                            label = { Text(period, fontWeight = if (selectedPeriod == period) FontWeight.Bold else FontWeight.Medium) },
+                            shape = chipShape,
+                            colors = chipColors
                         )
                     }
                 }

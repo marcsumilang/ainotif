@@ -119,7 +119,10 @@ class MainActivity : FragmentActivity() {
                     Scaffold(
                         modifier = Modifier.fillMaxSize(),
                         bottomBar = {
-                            NavigationBar {
+                            NavigationBar(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                tonalElevation = 3.dp
+                            ) {
                                 items.forEach { screen ->
                                     val isSelected = currentRoute == screen.route
                                     NavigationBarItem(
@@ -127,8 +130,11 @@ class MainActivity : FragmentActivity() {
                                             if (screen == Screen.Alerts && activeAlerts.isNotEmpty()) {
                                                 BadgedBox(
                                                     badge = {
-                                                        Badge {
-                                                            Text("${activeAlerts.size}")
+                                                        Badge(
+                                                            containerColor = com.ainotif.ui.theme.WiseAlarmRed,
+                                                            contentColor = com.ainotif.ui.theme.WisePaper
+                                                        ) {
+                                                            Text("${activeAlerts.size}", fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                                                         }
                                                     }
                                                 ) {
@@ -138,8 +144,20 @@ class MainActivity : FragmentActivity() {
                                                 Icon(screen.icon, contentDescription = screen.title)
                                             }
                                         },
-                                        label = { Text(screen.title) },
+                                        label = {
+                                            Text(
+                                                screen.title,
+                                                fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Medium
+                                            )
+                                        },
                                         selected = isSelected,
+                                        colors = NavigationBarItemDefaults.colors(
+                                            selectedIconColor = com.ainotif.ui.theme.WiseForestInk,
+                                            selectedTextColor = com.ainotif.ui.theme.WiseForestInk,
+                                            indicatorColor = com.ainotif.ui.theme.WiseLimeVoltage,
+                                            unselectedIconColor = com.ainotif.ui.theme.WisePebble,
+                                            unselectedTextColor = com.ainotif.ui.theme.WisePebble
+                                        ),
                                         onClick = {
                                             navController.navigate(screen.route) {
                                                 popUpTo(navController.graph.findStartDestination().id) {
