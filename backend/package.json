@@ -10,7 +10,7 @@
     "deploy": "wrangler deploy",
     "build": "tsc",
     "start": "node dist/node.js",
-    "test": "node --import tsx test/classifier.test.ts && node --import tsx test/api.test.ts",
+    "test": "node --import tsx test/classifier.test.ts && node --import tsx test/api.test.ts && node --import tsx test/transaction-dedup.test.ts",
     "evaluate:jev": "node --import tsx scripts/evaluate-jev.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",

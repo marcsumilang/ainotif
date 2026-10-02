@@ -2,7 +2,7 @@
 
 ## Source artwork
 
-- `notifai-mark.svg` is the transparent shield, N monogram, and signal mark.
+- `notifai-mark.svg` is the transparent shield and N monogram.
 - `notifai-logo.svg` is the horizontal wordmark for web and documents.
 - Web exports live in `web/public/`; Android uses adaptive vector resources and PNG density exports.
 

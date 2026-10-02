@@ -147,4 +147,22 @@ await test("schema rejects contradictory and invalid financial records", () => {
 await test("negative and malformed amounts are not truncated into candidates", () => {
   for (const text of ["Paid -$50", "Paid $-50", "Paid PHP -50", "Paid - PHP 50", "Paid - 50 PHP", "Paid $ - 50", "Paid $0", "Paid $1,24.50", "Paid $12.345"]) assert.deepEqual(extractAmountCandidates(text), [], text);
 });
+await test("master notification examples remain review-only during fallback", () => {
+  for (const text of [
+    "You have paid PHP 550.00 to GrabFood via GCash. Ref: 1029381. Your new balance is PHP 1,200.00",
+    "You have sent PHP 500.00 of GCash to JUAN DELA CRUZ 09171234567 on 10/02. Ref: 991823",
+    "You have paid PHP 2,450.00 of your bill to MERALCO with account no. 1234567890.",
+    "Debit from 1234 for PHP 650.00 at MERCURY DRUG on 10/02.",
+    "You spent $14.50 at SQ *BLUE BOTTLE COFFEE on card 8812.",
+    "Your account was charged $25.00 for membership.",
+    "Payment of $18.25 to Uber *TRIP was successful.",
+  ]) {
+    const result = fallbackHeuristicClassifier(text);
+    assert.equal(result.classification, "REVIEW", text);
+    assert.equal(result.decision.requiresReview, true);
+    assert.equal(result.decision.saveTransaction, false);
+    assert.equal(result.decision.hideNotification, false);
+    assert.equal(result.transaction, null);
+  }
+});
 console.log(`${passed} classifier contract checks passed. Live Jev API tokens used: 0. Mock usage values are test data.`);
