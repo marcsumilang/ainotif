@@ -35,7 +35,7 @@ object HeuristicClassifier {
         val lure = Regex("""\b(?:verify|confirm|click|tap|claim|log\s?in|sign\s?in|unlock|update)\b""", RegexOption.IGNORE_CASE).containsMatchIn(fullText)
         val pressure = Regex("""\b(?:suspended|locked|deactivated|urgent|immediately|final\s+notice)\b""", RegexOption.IGNORE_CASE).containsMatchIn(fullText)
         val warn = deceptive && lure && (pressure || lookalike)
-        val financial = Regex("""\b(?:paid|spent|received|refunded|credited|debited|transferred|withdrawn|payment|purchase|deposit|nagbayad|nakareceive)\b""", RegexOption.IGNORE_CASE).containsMatchIn(fullText)
+        val financial = Regex("""\b(?:paid|spent|sent|charged|debit|received|refunded|credited|debited|transferred|withdrawn|payment|purchase|deposit|nagbayad|nakareceive)\b""", RegexOption.IGNORE_CASE).containsMatchIn(fullText)
         val amount = Regex("""(?:USD|EUR|GBP|PHP|JPY|INR|CAD|AUD|SGD|NZD|CHF|HKD|[$€£₱₹¥])\s*\d|\d\s*(?:USD|EUR|GBP|PHP|JPY|INR|CAD|AUD|SGD|NZD|CHF|HKD)""", RegexOption.IGNORE_CASE).containsMatchIn(fullText)
         val review = warn || (financial && amount) || (lure && urls.isNotEmpty())
         return AiAnalysisResult(

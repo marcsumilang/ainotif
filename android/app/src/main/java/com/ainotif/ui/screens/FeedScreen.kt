@@ -519,7 +519,7 @@ fun TransactionItemCard(
                         "Transport & Travel" -> Icons.Default.DirectionsCar
                         "Entertainment" -> Icons.Default.Movie
                         "Bills & Utilities" -> Icons.Default.Receipt
-                        "Health & Fitness" -> Icons.Default.FitnessCenter
+                        "Health", "Health & Fitness" -> Icons.Default.FitnessCenter
                         "Transfers" -> Icons.Default.SwapHoriz
                         "Income" -> Icons.Default.Payments
                         else -> Icons.Default.AttachMoney

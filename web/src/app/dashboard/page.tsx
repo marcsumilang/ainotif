@@ -1410,7 +1410,7 @@ export default function Dashboard() {
                     <option value="Transport & Travel" className="text-black">Transport & Travel</option>
                     <option value="Entertainment" className="text-black">Entertainment</option>
                     <option value="Bills & Utilities" className="text-black">Bills & Utilities</option>
-                    <option value="Health & Fitness" className="text-black">Health & Fitness</option>
+                    <option value="Health" className="text-black">Health</option>
                     <option value="Transfers" className="text-black">Transfers</option>
                     <option value="Income" className="text-black">Income</option>
                     <option value="General" className="text-black">General</option>

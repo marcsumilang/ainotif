@@ -195,7 +195,7 @@ export function fallbackHeuristicClassifier(text: string, _packageName?: string)
     r.scamReason = "Rule-based warning: deceptive link combined with an action lure.";
     r.decision.warn = true;
   }
-  const financial = /\b(?:paid|spent|received|refunded|credited|debited|transferred|withdrawn|payment|purchase|deposit|nagbayad|nakareceive)\b/i.test(text);
+  const financial = /\b(?:paid|spent|sent|charged|debit|received|refunded|credited|debited|transferred|withdrawn|payment|purchase|deposit|nagbayad|nakareceive)\b/i.test(text);
   if (r.isScamOrPhishing || (financial && extractAmountCandidates(text).length > 0) || (lure && urls.length > 0)) {
     r.decision.requiresReview = true;
     if (!r.isScamOrPhishing) r.classification = "REVIEW";

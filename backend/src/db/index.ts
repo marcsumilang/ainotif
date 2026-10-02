@@ -86,6 +86,10 @@ export async function ensureUser(id: string, email?: string, displayName?: strin
   }
 }
 
+class TransactionIdConflictError extends Error {
+  constructor() { super("Transaction ID already exists"); }
+}
+
 export async function saveTransaction(data: {
   id?: string;
   userId: string;
@@ -107,7 +111,10 @@ export async function saveTransaction(data: {
       const existingById = await drizzleDb.query.transactions.findFirst({
         where: eq(schema.transactions.id, data.id),
       });
-      if (existingById) return existingById;
+      if (existingById) {
+          if (existingById.userId !== data.userId) throw new TransactionIdConflictError();
+          return existingById;
+        }
     }
 
     // 2. Check for duplicate by content & timestamp within 5 minutes
@@ -119,6 +126,8 @@ export async function saveTransaction(data: {
         eq(schema.transactions.userId, data.userId),
         eq(schema.transactions.merchant, data.merchant),
         eq(schema.transactions.amount, data.amount),
+          eq(schema.transactions.currency, data.currency),
+          eq(schema.transactions.type, data.type),
         gte(schema.transactions.timestamp, fiveMinBefore),
         lte(schema.transactions.timestamp, fiveMinAfter)
       ),
@@ -146,11 +155,16 @@ export async function saveTransaction(data: {
   } else {
     if (data.id) {
       const existing = memoryStore.transactions.find((t) => t.id === data.id);
-      if (existing) return existing;
+      if (existing) {
+        if (existing.userId !== data.userId) throw new TransactionIdConflictError();
+        return existing;
+      }
     }
     const existing = memoryStore.transactions.find((t) =>
       t.userId === data.userId &&
       t.merchant === data.merchant &&
+      t.currency === data.currency &&
+      t.type === data.type &&
       Math.abs(t.amount - data.amount) < 0.001 &&
       Math.abs(t.timestamp.getTime() - data.timestamp.getTime()) <= 300000
     );
