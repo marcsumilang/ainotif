@@ -1,8 +1,12 @@
 package com.ainotif.ui
 
+import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -27,6 +31,7 @@ import com.ainotif.ui.screens.OnboardingWizard
 import com.ainotif.ui.screens.SettingsScreen
 import com.ainotif.ui.screens.StatsScreen
 import com.ainotif.ui.theme.AiNotifTheme
+import io.sentry.Sentry
 
 sealed class Screen(val route: String, val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     object Feed : Screen("feed", "Feed", Icons.Default.ReceiptLong)
@@ -39,7 +44,17 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+    // waiting for view to draw to better represent a captured error with a screenshot
+    findViewById<android.view.View>(android.R.id.content).viewTreeObserver.addOnGlobalLayoutListener {
+      try {
+        throw Exception("This app uses Sentry! :)")
+      } catch (e: Exception) {
+        Sentry.captureException(e)
+      }
+    }
+
         enableEdgeToEdge()
+        handleAuthIntent(intent)
 
         val app = AiNotifApplication.instance
         val repository = app.repository
@@ -201,6 +216,37 @@ class MainActivity : FragmentActivity() {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleAuthIntent(intent)
+    }
+
+    private fun handleAuthIntent(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.scheme == "ainotif" && uri.host == "oauth" && uri.path?.startsWith("/callback") == true) {
+            val token = uri.getQueryParameter("token")
+            val userId = uri.getQueryParameter("userId")
+            val email = uri.getQueryParameter("email") ?: ""
+
+            if (!token.isNullOrBlank() && !userId.isNullOrBlank()) {
+                val app = AiNotifApplication.instance
+                app.authManager.setSession(userId = userId, email = email, token = token)
+
+                lifecycleScope.launch {
+                    val result = app.repository.syncWithBackend()
+                    val displayUser = if (email.isNotBlank()) email else userId
+                    val msg = if (result.isSuccess) {
+                        "Clerk Authenticated: $displayUser • Data Synced"
+                    } else {
+                        "Clerk Authenticated: $displayUser"
+                    }
+                    Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
                 }
             }
         }

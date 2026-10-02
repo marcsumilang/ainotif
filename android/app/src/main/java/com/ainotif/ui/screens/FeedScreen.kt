@@ -132,7 +132,7 @@ fun FeedScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Wise Hero Account Card
+            // Hero Account Card
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -472,7 +472,7 @@ fun TransactionItemCard(
                 .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Category Icon Badge (Wise Linen Mist Circle)
+            // Category Icon Badge
             Box(
                 modifier = Modifier
                     .size(46.dp)
@@ -722,7 +722,7 @@ fun TransactionDetailBottomSheet(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Save Button (Wise Pill Button)
+            // Save Button (Pill Button)
             Button(
                 onClick = {
                     onSave(

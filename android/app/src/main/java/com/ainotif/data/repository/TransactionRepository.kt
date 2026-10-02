@@ -36,6 +36,7 @@ class TransactionRepository(
 ) {
     val transactionsFlow: Flow<List<TransactionEntity>> = db.transactionDao().getAllTransactionsFlow()
     val activeAlertsFlow: Flow<List<AlertEntity>> = db.alertDao().getActiveAlertsFlow()
+    val allAlertsFlow: Flow<List<AlertEntity>> = db.alertDao().getAllAlertsFlow()
     val logsFlow: Flow<List<NotificationLogEntity>> = db.notificationLogDao().getRecentLogsFlow()
 
     suspend fun hasSimilarRecord(rawNotification: String, timestamp: Long, toleranceMs: Long = 60000L): Boolean {
@@ -316,7 +317,7 @@ class TransactionRepository(
                     type = dto.type,
                     rawNotification = dto.rawNotification,
                     sourcePackage = dto.sourcePackage,
-                    timestamp = System.currentTimeMillis(),
+                    timestamp = parseTimestamp(dto.timestamp),
                     isSynced = true
                 )
             }
@@ -334,7 +335,7 @@ class TransactionRepository(
                     riskScore = dto.riskScore,
                     reason = dto.reason,
                     phishingCues = dto.phishingCues ?: "",
-                    timestamp = System.currentTimeMillis(),
+                    timestamp = parseTimestamp(dto.timestamp),
                     isDismissed = dto.isDismissed,
                     isSynced = true
                 )
@@ -345,10 +346,33 @@ class TransactionRepository(
         preferencesManager.setLastSyncTime(System.currentTimeMillis())
     }
 
+    private fun parseTimestamp(raw: String?): Long {
+        if (raw.isNullOrBlank()) return System.currentTimeMillis()
+        return try {
+            java.time.Instant.parse(raw).toEpochMilli()
+        } catch (_: Exception) {
+            try {
+                val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).apply {
+                    timeZone = java.util.TimeZone.getTimeZone("UTC")
+                }
+                sdf.parse(raw)?.time ?: System.currentTimeMillis()
+            } catch (_: Exception) {
+                System.currentTimeMillis()
+            }
+        }
+    }
+
     suspend fun dismissAlert(alertId: String): Result<Boolean> {
         db.alertDao().dismissAlert(alertId)
         val token = authManager.getAuthToken()
         return apiClient.dismissAlert(alertId, token)
+    }
+
+    suspend fun autoDismissExpiredThreats(): Int {
+        val hours = preferencesManager.autoDismissThreatHours.value
+        if (hours <= 0) return 0
+        val cutoff = System.currentTimeMillis() - (hours.toLong() * 3600_000L)
+        return db.alertDao().autoDismissOlderThan(cutoff)
     }
 
     suspend fun fetchStats(): Result<StatsResponse> {

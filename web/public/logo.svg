@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 180" fill="none">
+  <!-- Icon Mark -->
+  <g transform="translate(10, 10)">
+    <rect width="160" height="160" rx="42" fill="#163300"/>
+    <path d="M80 24C108 38 124 40 131 43C132 76 120 111 80 142C40 111 28 76 29 43C36 40 52 38 80 24Z" stroke="#9fe870" stroke-width="9" stroke-linejoin="round" fill="#163300"/>
+    <path d="M60 110V59L100 107V56" stroke="#9fe870" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M104 38C112 42 117 48 120 56" stroke="#9fe870" stroke-width="7" stroke-linecap="round"/>
+  </g>
+  <!-- Wordmark -->
+  <text x="195" y="115" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif" font-size="82" font-weight="900" letter-spacing="-3" fill="#163300">Notif<tspan fill="#054d28">Ai</tspan></text>
+  <circle cx="508" cy="62" r="7" fill="#9fe870"/>
+</svg>

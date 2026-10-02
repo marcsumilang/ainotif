@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -114,6 +115,17 @@ class AiNotificationListenerService : NotificationListenerService() {
                 }
                 is ProcessNotificationOutcome.InterceptedScam -> {
                     Log.w(TAG, "🚨 Intercepted Scam (${outcome.alert.riskScore}% risk): ${outcome.alert.reason}")
+                    
+                    // Auto-hide the original malicious notification from the Android status bar/shade
+                    if (app.preferencesManager.isAutoHideMaliciousNotifEnabled.value) {
+                        try {
+                            cancelNotification(sbn.key)
+                            Log.i(TAG, "🛡️ Auto-hid malicious notification from system shade: ${sbn.key}")
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to auto-hide malicious notification from shade", e)
+                        }
+                    }
+
                     if (app.preferencesManager.isHighPriorityPushEnabled.value) {
                         postScamWarningNotification(outcome.alert)
                     }
@@ -247,6 +259,20 @@ class AiNotificationListenerService : NotificationListenerService() {
 
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         notificationManager.notify(notifId, notification)
+
+        // Auto-hide warning notification after configured delay
+        val autoHideDelay = AiNotifApplication.instance.preferencesManager.autoHideWarningNotifSeconds.value
+        if (autoHideDelay > 0) {
+            serviceScope.launch {
+                delay(autoHideDelay * 1000L)
+                try {
+                    notificationManager.cancel(notifId)
+                    Log.d(TAG, "🛡️ Auto-dismissed scam warning notification (id=$notifId) after ${autoHideDelay}s")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to auto-dismiss scam warning notification", e)
+                }
+            }
+        }
     }
 
     override fun onDestroy() {

@@ -2,7 +2,7 @@ package com.ainotif.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Official Wise Design System Palette
+// Primary Design System Palette
 val WiseForestInk = Color(0xFF163300)      // Primary Brand Dark & Dominant Weight
 val WiseLimeVoltage = Color(0xFF9FE870)    // Functional Accent & Energy Punctuation
 val WiseSpruce = Color(0xFF054D28)         // Tonal Depth Green & Cards

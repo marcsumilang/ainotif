@@ -32,6 +32,18 @@ class UserPreferencesManager(context: Context) {
     private val _isHighPriorityPushEnabled = MutableStateFlow(prefs.getBoolean(KEY_HIGH_PRIORITY_PUSH, true))
     val isHighPriorityPushEnabled: StateFlow<Boolean> = _isHighPriorityPushEnabled.asStateFlow()
 
+    private val _isAutoHideMaliciousNotifEnabled = MutableStateFlow(prefs.getBoolean(KEY_AUTO_HIDE_MALICIOUS_NOTIF, true))
+    val isAutoHideMaliciousNotifEnabled: StateFlow<Boolean> = _isAutoHideMaliciousNotifEnabled.asStateFlow()
+
+    private val _autoHideWarningNotifSeconds = MutableStateFlow(prefs.getInt(KEY_AUTO_HIDE_WARNING_NOTIF_SECONDS, 30))
+    val autoHideWarningNotifSeconds: StateFlow<Int> = _autoHideWarningNotifSeconds.asStateFlow()
+
+    private val _isAutoHideThreatMessageContent = MutableStateFlow(prefs.getBoolean(KEY_AUTO_HIDE_THREAT_MESSAGE_CONTENT, true))
+    val isAutoHideThreatMessageContent: StateFlow<Boolean> = _isAutoHideThreatMessageContent.asStateFlow()
+
+    private val _autoDismissThreatHours = MutableStateFlow(prefs.getInt(KEY_AUTO_DISMISS_THREAT_HOURS, 0))
+    val autoDismissThreatHours: StateFlow<Int> = _autoDismissThreatHours.asStateFlow()
+
     private val _isOnboarded = MutableStateFlow(prefs.getBoolean(KEY_IS_ONBOARDED, false))
     val isOnboarded: StateFlow<Boolean> = _isOnboarded.asStateFlow()
 
@@ -79,6 +91,26 @@ class UserPreferencesManager(context: Context) {
         _isHighPriorityPushEnabled.value = enabled
     }
 
+    fun setAutoHideMaliciousNotifEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTO_HIDE_MALICIOUS_NOTIF, enabled).apply()
+        _isAutoHideMaliciousNotifEnabled.value = enabled
+    }
+
+    fun setAutoHideWarningNotifSeconds(seconds: Int) {
+        prefs.edit().putInt(KEY_AUTO_HIDE_WARNING_NOTIF_SECONDS, seconds).apply()
+        _autoHideWarningNotifSeconds.value = seconds
+    }
+
+    fun setAutoHideThreatMessageContent(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTO_HIDE_THREAT_MESSAGE_CONTENT, enabled).apply()
+        _isAutoHideThreatMessageContent.value = enabled
+    }
+
+    fun setAutoDismissThreatHours(hours: Int) {
+        prefs.edit().putInt(KEY_AUTO_DISMISS_THREAT_HOURS, hours).apply()
+        _autoDismissThreatHours.value = hours
+    }
+
     fun setOnboarded(onboarded: Boolean) {
         prefs.edit().putBoolean(KEY_IS_ONBOARDED, onboarded).apply()
         _isOnboarded.value = onboarded
@@ -124,6 +156,10 @@ class UserPreferencesManager(context: Context) {
         private const val KEY_SCAM_SENSITIVITY = "pref_scam_sensitivity"
         private const val KEY_OFFLINE_ONLY = "pref_offline_only"
         private const val KEY_HIGH_PRIORITY_PUSH = "pref_high_priority_push"
+        private const val KEY_AUTO_HIDE_MALICIOUS_NOTIF = "pref_auto_hide_malicious_notif"
+        private const val KEY_AUTO_HIDE_WARNING_NOTIF_SECONDS = "pref_auto_hide_warning_notif_seconds"
+        private const val KEY_AUTO_HIDE_THREAT_MESSAGE_CONTENT = "pref_auto_hide_threat_msg_content"
+        private const val KEY_AUTO_DISMISS_THREAT_HOURS = "pref_auto_dismiss_threat_hours"
         private const val KEY_IS_ONBOARDED = "pref_is_onboarded"
         private const val KEY_DEV_MODE_UNLOCKED = "pref_dev_mode_unlocked"
         private const val KEY_LAST_SYNC_TIME = "pref_last_sync_time"

@@ -12,7 +12,7 @@ const config: Config = {
       colors: {
         background: "var(--background)",
         foreground: "var(--foreground)",
-        wise: {
+        brand: {
           forest: "#163300",
           lime: "#9fe870",
           spruce: "#054d28",
@@ -29,14 +29,14 @@ const config: Config = {
         },
       },
       borderRadius: {
-        "wise-card": "14px",
-        "wise-hero": "24px",
-        "wise-pill": "9999px",
+        card: "14px",
+        hero: "24px",
+        pill: "9999px",
       },
       boxShadow: {
-        "wise-subtle": "rgba(14, 15, 12, 0.08) 0px 0px 0px 1px",
-        "wise-card": "0 2px 8px rgba(22, 51, 0, 0.06)",
-        "wise-float": "0 12px 32px rgba(22, 51, 0, 0.12)",
+        subtle: "rgba(14, 15, 12, 0.08) 0px 0px 0px 1px",
+        card: "0 2px 8px rgba(22, 51, 0, 0.06)",
+        float: "0 12px 32px rgba(22, 51, 0, 0.12)",
       },
     },
   },

@@ -34,7 +34,17 @@ fun AlertsScreen(
     repository: TransactionRepository
 ) {
     val coroutineScope = rememberCoroutineScope()
-    val alerts by repository.activeAlertsFlow.collectAsState(initial = emptyList())
+    val activeAlerts by repository.activeAlertsFlow.collectAsState(initial = emptyList())
+    val allAlerts by repository.allAlertsFlow.collectAsState(initial = emptyList())
+    val isAutoHideContent by repository.preferencesManager.isAutoHideThreatMessageContent.collectAsState()
+    
+    var showDismissed by remember { mutableStateOf(false) }
+    val alerts = if (showDismissed) allAlerts else activeAlerts
+
+    // Auto-dismiss expired threats on screen load
+    LaunchedEffect(Unit) {
+        repository.autoDismissExpiredThreats()
+    }
 
     Scaffold(
         topBar = {
@@ -48,6 +58,21 @@ fun AlertsScreen(
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
                     }
+                },
+                actions = {
+                    FilterChip(
+                        selected = showDismissed,
+                        onClick = { showDismissed = !showDismissed },
+                        label = { Text(if (showDismissed) "All Threats" else "Active Only", fontSize = 12.sp) },
+                        leadingIcon = {
+                            Icon(
+                                if (showDismissed) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        },
+                        modifier = Modifier.padding(end = 12.dp)
+                    )
                 }
             )
         }
@@ -57,7 +82,7 @@ fun AlertsScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            // Status Header Banner (Wise Styling)
+            // Status Header Banner
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -152,6 +177,7 @@ fun AlertsScreen(
                     items(alerts, key = { it.id }) { alert ->
                         AlertItemCard(
                             alert = alert,
+                            isAutoHideContentEnabled = isAutoHideContent,
                             onDismiss = {
                                 coroutineScope.launch {
                                     repository.dismissAlert(alert.id)
@@ -168,9 +194,11 @@ fun AlertsScreen(
 @Composable
 fun AlertItemCard(
     alert: AlertEntity,
+    isAutoHideContentEnabled: Boolean = true,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    var isRevealed by remember(alert.id, isAutoHideContentEnabled) { mutableStateOf(!isAutoHideContentEnabled) }
     val formattedDate = remember(alert.timestamp) {
         val sdf = SimpleDateFormat("MMM dd, h:mm a", Locale.getDefault())
         sdf.format(Date(alert.timestamp))
@@ -220,11 +248,28 @@ fun AlertItemCard(
                     }
                 }
 
-                Text(
-                    text = formattedDate,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (alert.isDismissed) {
+                        Surface(
+                            shape = RoundedCornerShape(percent = 50),
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                            modifier = Modifier.padding(end = 8.dp)
+                        ) {
+                            Text(
+                                text = "Auto-Hidden / Resolved",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    Text(
+                        text = formattedDate,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -288,30 +333,96 @@ fun AlertItemCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Raw Notification Content Quote
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant
-            ) {
-                Column(modifier = Modifier.padding(10.dp)) {
-                    Text(
-                        text = "Original Intercepted Text:",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = alert.rawNotification,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
-                    )
+            // Raw Notification Content Quote with Auto-Hide Masking
+            if (!isRevealed) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.VisibilityOff,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Threat Message Hidden",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+                                )
+                                Text(
+                                    text = "Auto-hidden for privacy & safety",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                                )
+                            }
+                        }
+                        TextButton(
+                            onClick = { isRevealed = true },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Icon(Icons.Default.Visibility, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Reveal", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            } else {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Original Intercepted Text:",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                            if (isAutoHideContentEnabled) {
+                                TextButton(
+                                    onClick = { isRevealed = false },
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                                ) {
+                                    Icon(Icons.Default.VisibilityOff, contentDescription = null, modifier = Modifier.size(13.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text("Hide", fontSize = 11.sp)
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = alert.rawNotification,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
+                        )
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Action Buttons: Share Warning & Dismiss Threat (Wise Pill Buttons)
+            // Action Buttons: Share Warning & Dismiss Threat (Pill Buttons)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -332,18 +443,31 @@ fun AlertItemCard(
                     Text("Share Warning", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 }
 
-                Button(
-                    onClick = onDismiss,
-                    shape = RoundedCornerShape(percent = 50),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = com.ainotif.ui.theme.WiseForestInk,
-                        contentColor = com.ainotif.ui.theme.WisePaper
-                    ),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Dismiss", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                if (!alert.isDismissed) {
+                    Button(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(percent = 50),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = com.ainotif.ui.theme.WiseForestInk,
+                            contentColor = com.ainotif.ui.theme.WisePaper
+                        ),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Dismiss", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = {},
+                        enabled = false,
+                        shape = RoundedCornerShape(percent = 50),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.DoneAll, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Dismissed", fontSize = 13.sp)
+                    }
                 }
             }
         }

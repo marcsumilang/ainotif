@@ -1,25 +1,57 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTransactions, deleteTransaction, saveTransaction, updateTransaction, bulkDeleteTransactions, bulkUpdateCategory } from "@/lib/db";
+import { getTransactions, deleteTransaction, saveTransaction, updateTransaction, bulkDeleteTransactions, bulkUpdateCategory, getUserPlan } from "@/lib/db";
 import { eventBus } from "@/lib/events";
+import { getAuthenticatedUser } from "@/lib/auth";
 import { z } from "zod";
 
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const userId = searchParams.get("userId") || req.headers.get("x-user-id") || "user_demo_dev";
-  const limitParam = searchParams.get("limit");
-  const limit = limitParam ? parseInt(limitParam, 10) : 100;
+  const auth = await getAuthenticatedUser(req);
+  if (!auth) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const userId = auth.userId;
 
-  const transactions = await getTransactions(userId, isNaN(limit) ? 100 : limit);
-  return NextResponse.json({ transactions });
+  const { searchParams } = new URL(req.url);
+  const limitParam = searchParams.get("limit");
+  const parsedLimit = limitParam ? parseInt(limitParam, 10) : 100;
+
+  const userPlanInfo = await getUserPlan(userId);
+  const isPro = userPlanInfo.plan === "pro";
+  const effectiveLimit = isPro ? (isNaN(parsedLimit) ? 100 : parsedLimit) : Math.min(isNaN(parsedLimit) ? 15 : parsedLimit, 15);
+
+  const transactions = await getTransactions(userId, effectiveLimit);
+  return NextResponse.json({
+    transactions,
+    plan: userPlanInfo.plan,
+    isCapped: !isPro,
+    viewLimit: isPro ? null : 15,
+  });
 }
 
 export async function DELETE(req: NextRequest) {
+  const auth = await getAuthenticatedUser(req);
+  if (!auth) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const userId = auth.userId;
+
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
   const idsParam = searchParams.get("ids");
-  const userId = searchParams.get("userId") || req.headers.get("x-user-id") || "user_demo_dev";
 
   if (idsParam) {
+    const userPlanInfo = await getUserPlan(userId);
+    if (userPlanInfo.plan !== "pro") {
+      return NextResponse.json(
+        {
+          error: "PRO_FEATURE_REQUIRED",
+          message: "Bulk deletion is a Pro feature. Upgrade to Pro Guardian ($10/month) for bulk management tools.",
+          upgradeRequired: true,
+        },
+        { status: 403 }
+      );
+    }
+
     const ids = idsParam.split(",").filter(Boolean);
     const count = await bulkDeleteTransactions(userId, ids);
     eventBus.emit("transaction_deleted", { ids, userId });
@@ -45,9 +77,14 @@ const UpdateTransactionSchema = z.object({
 });
 
 export async function PATCH(req: NextRequest) {
+  const auth = await getAuthenticatedUser(req);
+  if (!auth) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const userId = auth.userId;
+
   try {
     const body = await req.json();
-    const userId = req.headers.get("x-user-id") || body.userId || "user_demo_dev";
     const parsed = UpdateTransactionSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ error: "Validation error", issues: parsed.error.issues }, { status: 400 });
@@ -57,6 +94,18 @@ export async function PATCH(req: NextRequest) {
 
     // Bulk category update
     if (ids && ids.length > 0 && category) {
+      const userPlanInfo = await getUserPlan(userId);
+      if (userPlanInfo.plan !== "pro") {
+        return NextResponse.json(
+          {
+            error: "PRO_FEATURE_REQUIRED",
+            message: "Bulk category assignment is a Pro feature. Upgrade to Pro Guardian ($10/month) for bulk management tools.",
+            upgradeRequired: true,
+          },
+          { status: 403 }
+        );
+      }
+
       const count = await bulkUpdateCategory(userId, ids, category);
       eventBus.emit("transaction_updated", { ids, category, userId });
       return NextResponse.json({ success: true, count });
@@ -91,6 +140,12 @@ const CreateTransactionSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const auth = await getAuthenticatedUser(req);
+  if (!auth) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const userId = auth.userId;
+
   try {
     const body = await req.json();
     const parsed = CreateTransactionSchema.safeParse(body);
@@ -98,11 +153,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Validation error", issues: parsed.error.issues }, { status: 400 });
     }
 
-    const { amount, currency, merchant, category, type, rawNotification, sourcePackage, timestamp, userId } = parsed.data;
-    const finalUserId = userId || req.headers.get("x-user-id") || "user_demo_dev";
+    const { amount, currency, merchant, category, type, rawNotification, sourcePackage, timestamp } = parsed.data;
 
     const created = await saveTransaction({
-      userId: finalUserId,
+      userId,
       amount,
       currency,
       merchant,
@@ -113,7 +167,7 @@ export async function POST(req: NextRequest) {
       timestamp: timestamp ? new Date(timestamp) : new Date(),
     });
 
-    eventBus.emit("transaction_created", { transaction: created, userId: finalUserId });
+    eventBus.emit("transaction_created", { transaction: created, userId });
 
     return NextResponse.json({ success: true, transaction: created }, { status: 201 });
   } catch (err: any) {

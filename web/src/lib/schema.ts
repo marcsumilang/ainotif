@@ -4,6 +4,8 @@ export const users = pgTable("users", {
   id: varchar("id", { length: 255 }).primaryKey(),
   email: varchar("email", { length: 255 }),
   displayName: varchar("display_name", { length: 255 }),
+  plan: varchar("plan", { length: 50 }).notNull().default("free"), // 'free' | 'pro'
+  notificationCount: integer("notification_count").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

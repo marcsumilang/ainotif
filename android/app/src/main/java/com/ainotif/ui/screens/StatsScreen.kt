@@ -140,7 +140,7 @@ fun StatsScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Period Selector Chips (Wise Pill Chips)
+            // Period Selector Chips (Pill Chips)
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),

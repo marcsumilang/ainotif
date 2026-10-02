@@ -1,1737 +1,903 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
+import Link from "next/link";
+import Image from "next/image";
 import {
   Shield,
   ShieldAlert,
   ShieldCheck,
-  TrendingDown,
   TrendingUp,
   CreditCard,
   AlertTriangle,
-  ArrowUpRight,
-  ArrowDownLeft,
-  ArrowLeftRight,
-  RefreshCw,
-  Search,
-  Trash2,
-  Eye,
-  Play,
-  CheckCircle2,
-  Clock,
+  ArrowRight,
   ExternalLink,
-  ChevronRight,
-  SlidersHorizontal,
-  X,
-  Copy,
-  Check,
+  Lock,
   Smartphone,
   Sparkles,
-  PieChart,
-  BarChart3,
+  Download,
+  QrCode,
+  CheckCircle2,
+  Trash2,
+  ChevronRight,
+  Zap,
   Cpu,
-  Lock,
-  Radio,
-  Edit2,
   Layers,
-  Building2,
-  ShoppingBag,
-  Coffee,
+  Check,
   HelpCircle,
+  Copy,
 } from "lucide-react";
+import QRCode from "qrcode";
 
-interface Transaction {
-  id: string;
-  userId: string;
-  amount: number;
-  currency: string;
-  merchant: string;
-  category: string;
-  type: "DEBIT" | "CREDIT" | "TRANSFER";
-  rawNotification: string;
-  sourcePackage: string | null;
-  timestamp: string | Date;
-  createdAt: string | Date;
-}
-
-interface SuspiciousAlert {
-  id: string;
-  userId: string;
-  rawNotification: string;
-  sourcePackage: string | null;
-  riskScore: number;
-  reason: string;
-  phishingCues: string | null;
-  timestamp: string | Date;
-  isDismissed: boolean;
-  createdAt: string | Date;
-}
-
-const PRESETS = [
+const SAMPLE_INTERACTIONS = [
   {
-    label: "🛒 Chase Grocery Spend",
-    title: "Chase Mobile",
-    text: "You spent $84.20 at Trader Joe's Market on card ending in 8832.",
-    packageName: "com.chase.sig.android",
-    category: "Financial / Debit",
+    id: "chase",
+    tag: "Banking Push",
+    source: "Chase Mobile",
+    raw: "Chase Alert: You made a $84.20 debit charge at Trader Joe's Market (Card ending in 8832). Balance: $2,410.50.",
+    type: "DEBIT",
+    merchant: "Trader Joe's Market",
+    amount: "$84.20",
+    category: "Groceries & Food",
+    currency: "USD",
+    otpStatus: "Sensitive Account Redacted",
+    isThreat: false,
+    riskScore: 4,
   },
   {
-    label: "☕ Starbucks Coffee",
-    title: "Citi Alerts",
-    text: "Authorized charge of $5.75 at Starbucks Coffee store #1042.",
-    packageName: "com.citibank.mobile.citibankmobile",
-    category: "Financial / Debit",
+    id: "phish",
+    tag: "SMS Threat",
+    source: "SMS: +1 (800) 555-0199",
+    raw: "URGENT SECURITY: Your Wells Fargo account has been locked. Tap https://wf-secure-verify.info/auth to verify your identity within 15 mins.",
+    type: "ALERT",
+    merchant: "Wells Fargo (Spoofed)",
+    amount: "N/A",
+    category: "Phishing Threat",
+    currency: "USD",
+    otpStatus: "Malicious Link Intercepted",
+    isThreat: true,
+    riskScore: 98,
+    threatReason: "Suspicious unverified domain 'wf-secure-verify.info' with urgent credential coercion.",
   },
   {
-    label: "💼 Salary Direct Deposit",
-    title: "Bank of America",
-    text: "Direct Deposit of $3,450.00 from TECHCORP GLOBAL INC has arrived.",
-    packageName: "com.infonow.bofa",
-    category: "Financial / Credit",
+    id: "applepay",
+    tag: "Contactless Pay",
+    source: "Apple Wallet / Chase",
+    raw: "Authorized $4.85 at Starbucks Reserve store #8841 via contactless mobile pay.",
+    type: "DEBIT",
+    merchant: "Starbucks Reserve",
+    amount: "$4.85",
+    category: "Coffee & Dining",
+    currency: "USD",
+    otpStatus: "On-Device Processed",
+    isThreat: false,
+    riskScore: 2,
   },
   {
-    label: "🚨 Urgent Phishing Scam SMS",
-    title: "SMS: +1 (800) 555-0199",
-    text: "URGENT SECURITY NOTICE: Your Wells Fargo debit card has been suspended. Tap http://bit.ly/wf-auth-sec within 15 mins to restore access.",
-    packageName: "com.google.android.apps.messaging",
-    category: "Threat / Scam",
-  },
-  {
-    label: "🛡️ Sensitive OTP Code (Privacy Drop)",
-    title: "Google Auth",
-    text: "Your verification code is 492019. Do NOT share this code with anyone.",
-    packageName: "com.google.android.apps.messaging",
-    category: "Privacy / Dropped",
+    id: "salary",
+    tag: "Direct Deposit",
+    source: "Bank of America",
+    raw: "Direct Deposit of $3,850.00 from TECHCORP GLOBAL INC has posted to checking *4910.",
+    type: "CREDIT",
+    merchant: "TechCorp Global Inc",
+    amount: "+$3,850.00",
+    category: "Income / Salary",
+    currency: "USD",
+    otpStatus: "Account Mask Protected",
+    isThreat: false,
+    riskScore: 0,
   },
 ];
 
-const RATES_TO_USD: Record<string, number> = {
-  USD: 1.0,
-  EUR: 1.08,
-  GBP: 1.28,
-  PHP: 0.0175,
-  CAD: 0.73,
-  AUD: 0.65,
-  JPY: 0.0065,
-  INR: 0.012,
-  SGD: 0.75,
-};
-
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  USD: "$",
-  EUR: "€",
-  GBP: "£",
-  PHP: "₱",
-  CAD: "CA$",
-  AUD: "A$",
-  JPY: "¥",
-  INR: "₹",
-  SGD: "S$",
-};
-
-function convertCurrency(amount: number, from: string, to: string): number {
-  if (from.toUpperCase() === to.toUpperCase()) return amount;
-  const fromRate = RATES_TO_USD[from.toUpperCase()] || 1.0;
-  const toRate = RATES_TO_USD[to.toUpperCase()] || 1.0;
-  const inUsd = amount * fromRate;
-  return inUsd / toRate;
-}
-
-function formatCurrency(amount: number, currency: string): string {
-  const sym = CURRENCY_SYMBOLS[currency] || currency + " ";
-  return `${sym}${Math.abs(amount).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
-}
-
-export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState<"overview" | "transactions" | "alerts" | "analytics" | "simulator">("overview");
-  const [userId, setUserId] = useState<string>("user_demo_dev");
-  const [baseCurrency, setBaseCurrency] = useState<string>("USD");
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [alerts, setAlerts] = useState<SuspiciousAlert[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  // SSE & Live Animation State
-  const [isLiveStreamActive, setIsLiveStreamActive] = useState<boolean>(false);
-  const [newlyAddedIds, setNewlyAddedIds] = useState<Set<string>>(new Set());
-
-  // Bulk selection state
-  const [selectedTxIds, setSelectedTxIds] = useState<Set<string>>(new Set());
-  const [bulkCategory, setBulkCategory] = useState<string>("Groceries");
-
-  // Inspector Modal state
-  const [inspectedItem, setInspectedItem] = useState<{
-    type: "transaction" | "alert";
-    item: Transaction | SuspiciousAlert;
-  } | null>(null);
-
-  // Editable transaction state in modal
-  const [editMerchant, setEditMerchant] = useState<string>("");
-  const [editCategory, setEditCategory] = useState<string>("");
-  const [editAmount, setEditAmount] = useState<string>("");
-  const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
-
-  // Filters for Transactions
-  const [txSearch, setTxSearch] = useState<string>("");
-  const [txTypeFilter, setTxTypeFilter] = useState<string>("ALL");
-  const [txCategoryFilter, setTxCategoryFilter] = useState<string>("ALL");
-  const [txSort, setTxSort] = useState<string>("date_desc");
-
-  // Filters for Alerts
-  const [alertStatusFilter, setAlertStatusFilter] = useState<string>("ALL");
-  const [alertRiskFilter, setAlertRiskFilter] = useState<string>("ALL");
-
-  // Simulator state
-  const [simTitle, setSimTitle] = useState<string>(PRESETS[0].title);
-  const [simText, setSimText] = useState<string>(PRESETS[0].text);
-  const [simPackage, setSimPackage] = useState<string>(PRESETS[0].packageName);
-  const [simLoading, setSimLoading] = useState<boolean>(false);
-  const [simResult, setSimResult] = useState<any>(null);
-
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const [txRes, alertsRes] = await Promise.all([
-        fetch(`/api/transactions?userId=${userId}`),
-        fetch(`/api/alerts?userId=${userId}`),
-      ]);
-
-      if (txRes.ok) {
-        const data = await txRes.json();
-        setTransactions(data.transactions || []);
-      }
-      if (alertsRes.ok) {
-        const data = await alertsRes.json();
-        setAlerts(data.alerts || []);
-      }
-    } catch (err) {
-      console.error("Failed to load dashboard data:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+export default function LandingPage() {
+  const [selectedSample, setSelectedSample] = useState(SAMPLE_INTERACTIONS[0]);
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   useEffect(() => {
-    fetchData();
-  }, [userId]);
+    // Generate QR code for mobile pairing or APK download
+    const apkDownloadUrl = typeof window !== "undefined"
+      ? `${window.location.origin}/ainotif-debug.apk`
+      : "https://notifai.app/ainotif-debug.apk";
 
-  // Connect to Server-Sent Events (SSE) Stream
-  useEffect(() => {
-    let evtSource: EventSource | null = null;
-    try {
-      evtSource = new EventSource("/api/events");
-      evtSource.addEventListener("connected", () => {
-        setIsLiveStreamActive(true);
-      });
-
-      evtSource.addEventListener("transaction_created", (e: MessageEvent) => {
-        try {
-          const payload = JSON.parse(e.data);
-          if (payload?.transaction) {
-            const tx: Transaction = payload.transaction;
-            setTransactions((prev) => [tx, ...prev.filter((t) => t.id !== tx.id)]);
-            setNewlyAddedIds((prev) => new Set(prev).add(tx.id));
-            setTimeout(() => {
-              setNewlyAddedIds((prev) => {
-                const next = new Set(prev);
-                next.delete(tx.id);
-                return next;
-              });
-            }, 4000);
-          }
-        } catch (err) {
-          console.error("SSE parse error:", err);
-        }
-      });
-
-      evtSource.addEventListener("alert_created", (e: MessageEvent) => {
-        try {
-          const payload = JSON.parse(e.data);
-          if (payload?.alert) {
-            const alert: SuspiciousAlert = payload.alert;
-            setAlerts((prev) => [alert, ...prev.filter((a) => a.id !== alert.id)]);
-          }
-        } catch (err) {
-          console.error("SSE parse error:", err);
-        }
-      });
-
-      evtSource.addEventListener("transaction_deleted", (e: MessageEvent) => {
-        try {
-          const payload = JSON.parse(e.data);
-          if (payload?.ids) {
-            const ids: string[] = payload.ids;
-            setTransactions((prev) => prev.filter((t) => !ids.includes(t.id)));
-          }
-        } catch (err) {
-          console.error("SSE parse error:", err);
-        }
-      });
-
-      evtSource.addEventListener("transaction_updated", (e: MessageEvent) => {
-        try {
-          const payload = JSON.parse(e.data);
-          if (payload?.transaction) {
-            setTransactions((prev) =>
-              prev.map((t) => (t.id === payload.transaction.id ? payload.transaction : t))
-            );
-          } else if (payload?.ids && payload?.category) {
-            setTransactions((prev) =>
-              prev.map((t) =>
-                payload.ids.includes(t.id) ? { ...t, category: payload.category } : t
-              )
-            );
-          }
-        } catch (err) {
-          console.error("SSE parse error:", err);
-        }
-      });
-
-      evtSource.onerror = () => {
-        setIsLiveStreamActive(false);
-      };
-    } catch (_: unknown) {
-      setIsLiveStreamActive(false);
-    }
-
-    return () => {
-      evtSource?.close();
-    };
+    QRCode.toDataURL(apkDownloadUrl, {
+      width: 200,
+      margin: 1.5,
+      color: { dark: "#163300", light: "#ffffff" },
+    })
+      .then((url) => setQrCodeUrl(url))
+      .catch((err) => console.error("Error generating QR:", err));
   }, []);
 
-  // Multi-currency normalized statistics
-  const normalizedStats = useMemo(() => {
-    let spent = 0;
-    let received = 0;
-    const breakdown: Record<string, number> = {};
-
-    for (const t of transactions) {
-      const converted = convertCurrency(t.amount, t.currency || "USD", baseCurrency);
-      if (t.type === "DEBIT") {
-        spent += converted;
-        breakdown[t.category] = (breakdown[t.category] || 0) + converted;
-      } else if (t.type === "CREDIT") {
-        received += converted;
-      }
-    }
-
-    const net = received - spent;
-    return {
-      totalSpent: Math.round(spent * 100) / 100,
-      totalReceived: Math.round(received * 100) / 100,
-      netFlow: Math.round(net * 100) / 100,
-      categoryBreakdown: breakdown,
-      totalTransactions: transactions.length,
-      activeAlerts: alerts.filter((a) => !a.isDismissed).length,
-      totalAlerts: alerts.length,
-      avgRiskScore:
-        alerts.length > 0
-          ? Math.round(alerts.reduce((acc, a) => acc + a.riskScore, 0) / alerts.length)
-          : 0,
-    };
-  }, [transactions, alerts, baseCurrency]);
-
-  const handleDismissAlert = async (alertId: string) => {
-    try {
-      const res = await fetch("/api/alerts", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: alertId, userId }),
-      });
-      if (res.ok) {
-        setAlerts((prev) =>
-          prev.map((a) => (a.id === alertId ? { ...a, isDismissed: true } : a))
-        );
-      }
-    } catch (err) {
-      console.error("Failed to dismiss alert:", err);
-    }
-  };
-
-  const handleDeleteTransaction = async (txId: string) => {
-    if (!confirm("Are you sure you want to delete this transaction record?")) return;
-    try {
-      const res = await fetch(`/api/transactions?id=${txId}&userId=${userId}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        setTransactions((prev) => prev.filter((t) => t.id !== txId));
-        if (inspectedItem?.item.id === txId) {
-          setInspectedItem(null);
-        }
-      }
-    } catch (err) {
-      console.error("Failed to delete transaction:", err);
-    }
-  };
-
-  const handleBulkDelete = async () => {
-    if (selectedTxIds.size === 0) return;
-    if (!confirm(`Delete ${selectedTxIds.size} selected transaction(s)?`)) return;
-    try {
-      const ids = Array.from(selectedTxIds).join(",");
-      const res = await fetch(`/api/transactions?ids=${ids}&userId=${userId}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        setTransactions((prev) => prev.filter((t) => !selectedTxIds.has(t.id)));
-        setSelectedTxIds(new Set());
-      }
-    } catch (err) {
-      console.error("Bulk delete failed:", err);
-    }
-  };
-
-  const handleBulkCategorize = async (category: string) => {
-    if (selectedTxIds.size === 0) return;
-    try {
-      const ids = Array.from(selectedTxIds);
-      const res = await fetch("/api/transactions", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids, category, userId }),
-      });
-      if (res.ok) {
-        setTransactions((prev) =>
-          prev.map((t) => (selectedTxIds.has(t.id) ? { ...t, category } : t))
-        );
-        setSelectedTxIds(new Set());
-      }
-    } catch (err) {
-      console.error("Bulk categorize failed:", err);
-    }
-  };
-
-  const handleSaveInspectedTransaction = async () => {
-    if (!inspectedItem || inspectedItem.type !== "transaction") return;
-    const tx = inspectedItem.item as Transaction;
-    setIsSavingEdit(true);
-    try {
-      const amountNum = parseFloat(editAmount) || tx.amount;
-      const res = await fetch("/api/transactions", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: tx.id,
-          merchant: editMerchant,
-          category: editCategory,
-          amount: amountNum,
-          userId,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.transaction) {
-          setTransactions((prev) =>
-            prev.map((t) => (t.id === tx.id ? data.transaction : t))
-          );
-          setInspectedItem({ type: "transaction", item: data.transaction });
-        }
-      }
-    } catch (err) {
-      console.error("Failed to update transaction:", err);
-    } finally {
-      setIsSavingEdit(false);
-    }
-  };
-
-  const handleRunSimulator = async () => {
-    setSimLoading(true);
-    setSimResult(null);
-    try {
-      const res = await fetch("/api/process-notification", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: simTitle,
-          text: simText,
-          packageName: simPackage,
-          userId,
-          timestamp: Date.now(),
-        }),
-      });
-      const data = await res.json();
-      setSimResult(data);
-      fetchData();
-    } catch (err: any) {
-      setSimResult({ error: err.message || "Failed to process simulation" });
-    } finally {
-      setSimLoading(false);
-    }
-  };
-
-  const copyText = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  // Filtered transactions
-  const filteredTransactions = useMemo(() => {
-    return transactions
-      .filter((t) => {
-        if (txTypeFilter !== "ALL" && t.type !== txTypeFilter) return false;
-        if (txCategoryFilter !== "ALL" && t.category !== txCategoryFilter) return false;
-        if (txSearch) {
-          const q = txSearch.toLowerCase();
-          const matchMerchant = t.merchant.toLowerCase().includes(q);
-          const matchRaw = t.rawNotification.toLowerCase().includes(q);
-          const matchCat = t.category.toLowerCase().includes(q);
-          if (!matchMerchant && !matchRaw && !matchCat) return false;
-        }
-        return true;
-      })
-      .sort((a, b) => {
-        if (txSort === "date_desc") return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
-        if (txSort === "date_asc") return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
-        if (txSort === "amount_desc") return b.amount - a.amount;
-        if (txSort === "amount_asc") return a.amount - b.amount;
-        return 0;
-      });
-  }, [transactions, txTypeFilter, txCategoryFilter, txSearch, txSort]);
-
-  // Categories list
-  const uniqueCategories = useMemo(() => {
-    const set = new Set<string>();
-    transactions.forEach((t) => set.add(t.category));
-    return Array.from(set);
-  }, [transactions]);
-
-  // Filtered alerts
-  const filteredAlerts = useMemo(() => {
-    return alerts.filter((a) => {
-      if (alertStatusFilter === "ACTIVE" && a.isDismissed) return false;
-      if (alertStatusFilter === "DISMISSED" && !a.isDismissed) return false;
-      if (alertRiskFilter === "CRITICAL" && a.riskScore < 80) return false;
-      if (alertRiskFilter === "HIGH" && (a.riskScore < 60 || a.riskScore >= 80)) return false;
-      if (alertRiskFilter === "MEDIUM" && (a.riskScore < 40 || a.riskScore >= 60)) return false;
-      return true;
-    });
-  }, [alerts, alertStatusFilter, alertRiskFilter]);
-
-  const parseCues = (cues: string | null): string[] => {
-    if (!cues) return [];
-    try {
-      return JSON.parse(cues);
-    } catch {
-      return [cues];
-    }
-  };
-
-  const getRiskBadge = (score: number) => {
-    if (score >= 80) {
-      return (
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#cb272f]/10 text-[#cb272f] border border-[#cb272f]/20">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#cb272f] animate-pulse" />
-          Critical ({score}%)
-        </span>
-      );
-    } else if (score >= 50) {
-      return (
-        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#e8ebe6] text-[#163300] border border-[#868685]/30">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-          Moderate ({score}%)
-        </span>
-      );
-    }
-    return (
-      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#e2f6d5] text-[#054d28] border border-[#9fe870]/40">
-        <span className="w-1.5 h-1.5 rounded-full bg-[#054d28]" />
-        Low Risk ({score}%)
-      </span>
-    );
-  };
-
-  const getMerchantIcon = (merchant: string, category: string) => {
-    const m = merchant.toLowerCase();
-    const c = category.toLowerCase();
-    if (m.includes("starbucks") || m.includes("coffee")) return <Coffee className="w-4 h-4 text-[#163300]" />;
-    if (m.includes("trader") || m.includes("market") || m.includes("grocer") || c.includes("food"))
-      return <ShoppingBag className="w-4 h-4 text-[#163300]" />;
-    if (m.includes("bank") || m.includes("chase") || m.includes("citi") || m.includes("deposit") || c.includes("salary"))
-      return <Building2 className="w-4 h-4 text-[#163300]" />;
-    return <CreditCard className="w-4 h-4 text-[#163300]" />;
+  const handleCopyApkLink = () => {
+    const apkDownloadUrl = `${window.location.origin}/ainotif-debug.apk`;
+    navigator.clipboard.writeText(apkDownloadUrl);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
   };
 
   return (
-    <div className="min-h-screen bg-[#f7f9f6] text-[#454745] font-sans">
-      {/* Wise Top Navigation Bar */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#e8ebe6] px-4 sm:px-8 py-3.5 shadow-sm">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-          {/* Brand */}
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => setActiveTab("overview")}>
-              <div className="w-10 h-10 rounded-full bg-[#163300] flex items-center justify-center text-[#9fe870] font-black text-xl shadow-sm">
-                W
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl font-black tracking-tighter text-[#163300]">
-                    AiNotif
-                  </span>
-                  <span className="bg-[#e2f6d5] text-[#163300] text-[11px] font-bold px-2 py-0.5 rounded-full border border-[#9fe870]/50 uppercase tracking-wider">
-                    Wise Suite
-                  </span>
-                </div>
-                <p className="text-[11px] text-[#868685] font-medium hidden sm:block">
-                  Intelligent Financial & Threat Interceptor
-                </p>
-              </div>
+    <div className="min-h-screen bg-[#f7f9f6] text-[#454745] selection:bg-[#9fe870] selection:text-[#163300]">
+      {/* 1. TOP NAVIGATION (Wise-style pill headers) */}
+      <header className="sticky top-0 z-40 bg-[#f7f9f6]/90 backdrop-blur-xl border-b border-[#e8ebe6]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+          {/* Logo */}
+          <Link href="/" className="flex items-center gap-3 group">
+            <div className="w-11 h-11 rounded-2xl bg-[#163300] flex items-center justify-center text-[#9fe870] shadow-sm group-hover:scale-105 transition-transform">
+              <Shield className="w-6 h-6 text-[#9fe870] stroke-[2.5]" />
             </div>
+            <div className="flex flex-col">
+              <span className="text-2xl font-black tracking-tight text-[#163300] leading-none">
+                Notif<span className="text-[#054d28]">Ai</span>
+              </span>
+              <span className="text-[10px] font-bold tracking-widest text-[#868685] uppercase">
+                Expense & Threat Guardian
+              </span>
+            </div>
+          </Link>
 
-            {/* Pill Navigation Segments */}
-            <nav className="hidden md:flex items-center bg-[#e8ebe6] p-1 rounded-full">
-              {[
-                { id: "overview", label: "Overview" },
-                { id: "transactions", label: "Transactions" },
-                { id: "alerts", label: "Scam Radar", badge: normalizedStats.activeAlerts },
-                { id: "analytics", label: "Insights" },
-                { id: "simulator", label: "Simulator" },
-              ].map((tab) => {
-                const isActive = activeTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id as any)}
-                    className={`relative px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
-                      isActive
-                        ? "bg-[#163300] text-white shadow-sm"
-                        : "text-[#454745] hover:text-[#163300] hover:bg-white/50"
-                    }`}
-                  >
-                    <span>{tab.label}</span>
-                    {Boolean(tab.badge && tab.badge > 0) && (
-                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                        isActive ? "bg-[#9fe870] text-[#163300]" : "bg-[#cb272f] text-white"
-                      }`}>
-                        {tab.badge}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </nav>
-          </div>
+          {/* Nav Links */}
+          <nav className="hidden md:flex items-center gap-1 bg-[#e8ebe6] px-3 py-1.5 rounded-full text-xs font-semibold text-[#163300]">
+            <a href="#features" className="px-3.5 py-1.5 rounded-full hover:bg-white transition-colors">
+              Features
+            </a>
+            <a href="#demo" className="px-3.5 py-1.5 rounded-full hover:bg-white transition-colors">
+              Interactive Demo
+            </a>
+            <a href="#pricing" className="px-3.5 py-1.5 rounded-full hover:bg-white transition-colors">
+              Pricing
+            </a>
+            <a href="#security" className="px-3.5 py-1.5 rounded-full hover:bg-white transition-colors">
+              Zero-Knowledge Security
+            </a>
+            <a href="#compliance" className="px-3.5 py-1.5 rounded-full hover:bg-white transition-colors">
+              Google Play Ready
+            </a>
+          </nav>
 
-          {/* Right Action Cluster */}
+          {/* Right Actions */}
           <div className="flex items-center gap-3">
-            {/* Live SSE Stream Indicator */}
-            <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-[#e8ebe6] text-xs font-semibold text-[#163300]">
-              <span className={`w-2.5 h-2.5 rounded-full ${isLiveStreamActive ? "bg-[#9fe870] ring-4 ring-[#9fe870]/30 animate-pulse" : "bg-[#868685]"}`} />
-              <span>{isLiveStreamActive ? "Live Guard Active" : "Syncing Feed"}</span>
-            </div>
-
-            {/* Base Currency Pill Selector */}
-            <div className="flex items-center bg-white border border-[#e8ebe6] rounded-full px-3 py-1 text-xs font-bold text-[#163300]">
-              <span className="text-[#868685] mr-1.5 font-medium">Base:</span>
-              <select
-                value={baseCurrency}
-                onChange={(e) => setBaseCurrency(e.target.value)}
-                className="bg-transparent font-bold focus:outline-none cursor-pointer pr-1"
-              >
-                {Object.keys(RATES_TO_USD).map((cur) => (
-                  <option key={cur} value={cur}>
-                    {cur} ({CURRENCY_SYMBOLS[cur] || ""})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Refresh Button */}
-            <button
-              onClick={fetchData}
-              title="Refresh Feed"
-              className="w-9 h-9 rounded-full bg-white border border-[#e8ebe6] flex items-center justify-center text-[#163300] hover:bg-[#e8ebe6] transition-colors"
+            <Link
+              href="/dashboard"
+              className="text-xs font-bold text-[#163300] hover:text-[#054d28] px-3 py-2 hidden sm:inline-block"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-            </button>
-
-            {/* User Profile Pill */}
-            <div className="hidden sm:flex items-center gap-2 bg-[#e2f6d5] border border-[#9fe870]/50 rounded-full px-3 py-1.5 text-xs font-bold text-[#163300]">
-              <div className="w-5 h-5 rounded-full bg-[#163300] text-[#9fe870] flex items-center justify-center text-[10px] font-black">
-                U
-              </div>
-              <span className="truncate max-w-[100px]">{userId}</span>
-            </div>
+              Web Console
+            </Link>
+            <a
+              href="#download"
+              className="bg-[#163300] text-[#9fe870] hover:bg-[#204505] text-xs font-bold px-5 py-2.5 rounded-full transition-all shadow-sm flex items-center gap-1.5"
+            >
+              <Smartphone className="w-4 h-4 text-[#9fe870]" />
+              <span>Get Android App</span>
+            </a>
           </div>
-        </div>
-
-        {/* Mobile Navigation Row */}
-        <div className="flex md:hidden items-center justify-between overflow-x-auto gap-1 mt-2.5 pt-2 border-t border-[#e8ebe6] scrollbar-none">
-          {[
-            { id: "overview", label: "Overview" },
-            { id: "transactions", label: "Ledger" },
-            { id: "alerts", label: "Scam Radar", badge: normalizedStats.activeAlerts },
-            { id: "analytics", label: "Insights" },
-            { id: "simulator", label: "Simulator" },
-          ].map((tab) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1 ${
-                  isActive ? "bg-[#163300] text-white" : "text-[#454745] hover:bg-[#e8ebe6]"
-                }`}
-              >
-                <span>{tab.label}</span>
-                {Boolean(tab.badge && tab.badge > 0) && (
-                  <span className="bg-[#cb272f] text-white px-1.5 py-0.2 rounded-full text-[10px]">
-                    {tab.badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
         </div>
       </header>
 
-      {/* Main Container */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-8 py-8">
-        {/* ======================= OVERVIEW TAB ======================= */}
-        {activeTab === "overview" && (
-          <div className="space-y-8 animate-fadeIn">
-            {/* Wise Hero Balance Card */}
-            <div className="wise-hero-dark p-6 sm:p-10 relative overflow-hidden shadow-wise-float">
-              {/* Background ambient pattern */}
-              <div className="absolute -right-12 -bottom-12 w-80 h-80 rounded-full bg-[#9fe870]/10 blur-3xl pointer-events-none" />
-              <div className="absolute top-0 right-0 p-8 hidden lg:block opacity-20 text-[#9fe870] font-mono text-8xl font-black select-none pointer-events-none">
-                WISE
+      {/* 2. HERO SECTION (Wise bold typography & dark accents) */}
+      <section className="relative pt-12 pb-20 md:pt-20 md:pb-28 overflow-hidden">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-center">
+            {/* Left Content */}
+            <div className="lg:col-span-7 space-y-6">
+              <div className="inline-flex items-center gap-2 bg-[#e2f6d5] border border-[#9fe870] px-3.5 py-1.5 rounded-full text-xs font-bold text-[#163300] uppercase tracking-wider">
+                <span className="w-2 h-2 rounded-full bg-[#163300] animate-pulse"></span>
+                <span>Google Play Ready • Zero-Knowledge OTP Redaction</span>
               </div>
 
-              <div className="relative z-10 max-w-2xl">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-white text-xs font-semibold mb-4 backdrop-blur-sm">
-                  <span className="w-2 h-2 rounded-full bg-[#9fe870]" />
-                  <span>Verified Financial Stream • {baseCurrency}</span>
-                </div>
+              <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black text-[#163300] tracking-tight leading-[1.05]">
+                Money moves.
+                <br />
+                <span className="text-[#054d28]">Scams don&apos;t.</span>
+              </h1>
 
-                <p className="text-white/70 text-sm font-medium uppercase tracking-wider mb-1">
-                  Total Outflow Tracked
-                </p>
-                <h1 className="text-4xl sm:text-6xl font-black text-[#9fe870] tracking-tight mb-4">
-                  {formatCurrency(normalizedStats.totalSpent, baseCurrency)}
-                </h1>
+              <p className="text-base sm:text-lg text-[#454745] max-w-xl leading-relaxed">
+                NotifAi intercepts bank pushes, automatically strips sensitive OTPs and passwords on-device, categorizes your spending with structured AI, and neutralizes phishing SMS before you tap.
+              </p>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-4 border-t border-white/15">
-                  <div>
-                    <span className="text-white/60 text-xs font-medium block">Total Inflow</span>
-                    <span className="text-lg sm:text-xl font-bold text-white flex items-center gap-1 mt-0.5">
-                      <ArrowDownLeft className="w-4 h-4 text-[#9fe870]" />
-                      {formatCurrency(normalizedStats.totalReceived, baseCurrency)}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-white/60 text-xs font-medium block">Net Cash Flow</span>
-                    <span className={`text-lg sm:text-xl font-bold flex items-center gap-1 mt-0.5 ${
-                      normalizedStats.netFlow >= 0 ? "text-[#9fe870]" : "text-[#cb272f]"
-                    }`}>
-                      {normalizedStats.netFlow >= 0 ? (
-                        <ArrowUpRight className="w-4 h-4 text-[#9fe870]" />
-                      ) : (
-                        <ArrowDownLeft className="w-4 h-4 text-[#cb272f]" />
-                      )}
-                      {formatCurrency(normalizedStats.netFlow, baseCurrency)}
-                    </span>
-                  </div>
-                  <div className="col-span-2 sm:col-span-1">
-                    <span className="text-white/60 text-xs font-medium block">Intercepted Alerts</span>
-                    <span className="text-lg sm:text-xl font-bold text-white flex items-center gap-1 mt-0.5">
-                      <ShieldAlert className="w-4 h-4 text-[#cb272f]" />
-                      {normalizedStats.activeAlerts} Active Threats
-                    </span>
-                  </div>
-                </div>
-
-                {/* Wise Pill Action Buttons */}
-                <div className="flex flex-wrap items-center gap-3 mt-8">
-                  <button
-                    onClick={() => setActiveTab("simulator")}
-                    className="wise-btn-primary gap-2 shadow-sm text-sm"
-                  >
-                    <Play className="w-4 h-4 fill-[#163300]" />
-                    <span>Simulate Notification</span>
-                  </button>
-                  <button
-                    onClick={() => setActiveTab("transactions")}
-                    className="bg-white/10 hover:bg-white/20 text-white font-semibold text-sm px-5 py-2 rounded-full transition-all inline-flex items-center gap-2 backdrop-blur-sm"
-                  >
-                    <span>View Full Ledger</span>
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => setActiveTab("alerts")}
-                    className="bg-white/10 hover:bg-white/20 text-white font-semibold text-sm px-5 py-2 rounded-full transition-all inline-flex items-center gap-2 backdrop-blur-sm"
-                  >
-                    <Shield className="w-4 h-4 text-[#9fe870]" />
-                    <span>Security Radar</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Quick Metrics Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Phishing Interception Card */}
-              <div className="wise-card p-6 bg-gradient-to-br from-[#ffffff] to-[#f4f7f2]">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-xs font-bold uppercase tracking-wider text-[#868685]">
-                    Threat Radar
-                  </span>
-                  <span className="p-2 rounded-full bg-[#cb272f]/10 text-[#cb272f]">
-                    <ShieldAlert className="w-5 h-5" />
-                  </span>
-                </div>
-                <div className="text-3xl font-black text-[#163300] mb-1">
-                  {normalizedStats.activeAlerts} Active
-                </div>
-                <p className="text-xs text-[#868685] mb-4">
-                  {alerts.length} total scam notifications analyzed & quarantined
-                </p>
-                <div className="bg-white border border-[#e8ebe6] rounded-xl p-3 flex items-center justify-between text-xs font-bold">
-                  <span className="text-[#454745]">Mean Threat Risk</span>
-                  <span className="text-[#cb272f]">{normalizedStats.avgRiskScore}/100</span>
-                </div>
-              </div>
-
-              {/* Transactions Recorded */}
-              <div className="wise-card p-6 bg-gradient-to-br from-[#ffffff] to-[#f4f7f2]">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-xs font-bold uppercase tracking-wider text-[#868685]">
-                    Activity Volume
-                  </span>
-                  <span className="p-2 rounded-full bg-[#e2f6d5] text-[#163300]">
-                    <CreditCard className="w-5 h-5" />
-                  </span>
-                </div>
-                <div className="text-3xl font-black text-[#163300] mb-1">
-                  {normalizedStats.totalTransactions} Records
-                </div>
-                <p className="text-xs text-[#868685] mb-4">
-                  Multi-currency parsed from SMS & banking notifications
-                </p>
-                <div className="bg-white border border-[#e8ebe6] rounded-xl p-3 flex items-center justify-between text-xs font-bold">
-                  <span className="text-[#454745]">Active Categories</span>
-                  <span className="text-[#163300]">{Object.keys(normalizedStats.categoryBreakdown).length} labels</span>
-                </div>
-              </div>
-
-              {/* Privacy Guardian Status */}
-              <div className="wise-card p-6 bg-gradient-to-br from-[#ffffff] to-[#eaf5e4]">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-xs font-bold uppercase tracking-wider text-[#054d28]">
-                    Zero-Knowledge Shield
-                  </span>
-                  <span className="p-2 rounded-full bg-[#9fe870]/40 text-[#163300]">
-                    <Lock className="w-5 h-5" />
-                  </span>
-                </div>
-                <div className="text-3xl font-black text-[#163300] mb-1">
-                  100% On-Device
-                </div>
-                <p className="text-xs text-[#054d28] mb-4">
-                  Local regex pre-filter drops OTPs & passwords before cloud sync
-                </p>
-                <div className="bg-white border border-[#e8ebe6] rounded-xl p-3 flex items-center justify-between text-xs font-bold">
-                  <span className="text-[#454745]">Credentials Dropped</span>
-                  <span className="text-[#054d28]">Zero Transmitted</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Recent Transactions & Alerts Side-by-Side */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Recent Activity */}
-              <div className="wise-card p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <h3 className="text-lg font-black text-[#163300]">Recent Spending</h3>
-                    <p className="text-xs text-[#868685]">Live notification feed</p>
-                  </div>
-                  <button
-                    onClick={() => setActiveTab("transactions")}
-                    className="wise-btn-secondary text-xs py-1.5 px-3.5"
-                  >
-                    View All
-                  </button>
-                </div>
-
-                <div className="divide-y divide-[#e8ebe6]">
-                  {transactions.slice(0, 5).map((t) => {
-                    const isNew = newlyAddedIds.has(t.id);
-                    return (
-                      <div
-                        key={t.id}
-                        onClick={() => {
-                          setInspectedItem({ type: "transaction", item: t });
-                          setEditMerchant(t.merchant);
-                          setEditCategory(t.category);
-                          setEditAmount(t.amount.toString());
-                        }}
-                        className={`py-3.5 flex items-center justify-between group cursor-pointer hover:bg-[#f7f9f6] px-2 rounded-xl transition-all ${
-                          isNew ? "bg-[#e2f6d5]/40 animate-pulse" : ""
-                        }`}
-                      >
-                        <div className="flex items-center gap-3.5">
-                          <div className="w-10 h-10 rounded-full bg-[#e8ebe6] group-hover:bg-[#e2f6d5] flex items-center justify-center transition-colors">
-                            {getMerchantIcon(t.merchant, t.category)}
-                          </div>
-                          <div>
-                            <div className="text-sm font-bold text-[#163300] group-hover:underline">
-                              {t.merchant}
-                            </div>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#e8ebe6] text-[#454745]">
-                                {t.category}
-                              </span>
-                              <span className="text-[11px] text-[#868685]">
-                                {new Date(t.timestamp).toLocaleDateString(undefined, {
-                                  month: "short",
-                                  day: "numeric",
-                                })}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="text-right">
-                          <div className={`text-sm font-black ${
-                            t.type === "CREDIT" ? "text-[#054d28]" : "text-[#163300]"
-                          }`}>
-                            {t.type === "CREDIT" ? "+" : "-"}{CURRENCY_SYMBOLS[t.currency] || ""}{t.amount.toFixed(2)}
-                          </div>
-                          <span className="text-[10px] font-semibold text-[#868685] uppercase">
-                            {t.currency}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {transactions.length === 0 && (
-                    <div className="text-center py-8 text-xs text-[#868685]">
-                      No transactions recorded yet. Run a simulator preset to get started!
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Threat Interceptor Feed */}
-              <div className="wise-card p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <h3 className="text-lg font-black text-[#163300]">Threat Quarantine</h3>
-                    <p className="text-xs text-[#868685]">Phishing cues & scam detection</p>
-                  </div>
-                  <button
-                    onClick={() => setActiveTab("alerts")}
-                    className="wise-btn-secondary text-xs py-1.5 px-3.5"
-                  >
-                    View Radar
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  {alerts.slice(0, 4).map((alert) => (
-                    <div
-                      key={alert.id}
-                      className={`p-4 rounded-xl border transition-all ${
-                        alert.isDismissed
-                          ? "bg-[#f7f9f6] border-[#e8ebe6] opacity-60"
-                          : "bg-white border-[#cb272f]/30 shadow-sm"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          {getRiskBadge(alert.riskScore)}
-                          {alert.isDismissed && (
-                            <span className="text-[11px] font-bold text-[#868685]">
-                              Dismissed
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-[11px] text-[#868685]">
-                          {new Date(alert.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                      </div>
-
-                      <p className="text-xs font-semibold text-[#163300] mb-2">
-                        {alert.reason}
-                      </p>
-
-                      <p className="text-[11px] text-[#454745] font-mono bg-[#f7f9f6] p-2 rounded-lg border border-[#e8ebe6] truncate">
-                        "{alert.rawNotification}"
-                      </p>
-
-                      {!alert.isDismissed && (
-                        <div className="mt-3 flex justify-end">
-                          <button
-                            onClick={() => handleDismissAlert(alert.id)}
-                            className="text-[11px] font-bold text-[#163300] hover:text-[#cb272f] underline"
-                          >
-                            Dismiss Threat
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                  {alerts.length === 0 && (
-                    <div className="text-center py-8 text-xs text-[#868685]">
-                      <ShieldCheck className="w-8 h-8 text-[#054d28] mx-auto mb-2" />
-                      No threats detected. Radar is all clear!
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ======================= TRANSACTIONS TAB ======================= */}
-        {activeTab === "transactions" && (
-          <div className="space-y-6 animate-fadeIn">
-            {/* Filter and Search Bar */}
-            <div className="wise-card p-6">
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                {/* Search Input */}
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 text-[#868685] absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={txSearch}
-                    onChange={(e) => setTxSearch(e.target.value)}
-                    placeholder="Search merchant, notification content, or category..."
-                    className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-[#d4d8cf] focus:border-[#163300] focus:ring-1 focus:ring-[#163300] text-sm bg-white text-[#163300] placeholder-[#868685] outline-none"
-                  />
-                  {txSearch && (
-                    <button
-                      onClick={() => setTxSearch("")}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#868685] hover:text-[#163300]"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-
-                {/* Sort & Quick Filter Selectors */}
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <select
-                    value={txSort}
-                    onChange={(e) => setTxSort(e.target.value)}
-                    className="px-3.5 py-2 rounded-full border border-[#d4d8cf] text-xs font-bold text-[#163300] bg-white outline-none cursor-pointer"
-                  >
-                    <option value="date_desc">Newest First</option>
-                    <option value="date_asc">Oldest First</option>
-                    <option value="amount_desc">Highest Amount</option>
-                    <option value="amount_asc">Lowest Amount</option>
-                  </select>
-
-                  <button
-                    onClick={() => {
-                      setTxTypeFilter("ALL");
-                      setTxCategoryFilter("ALL");
-                      setTxSearch("");
-                    }}
-                    className="wise-btn-secondary text-xs py-2 px-4"
-                  >
-                    Reset Filters
-                  </button>
-                </div>
-              </div>
-
-              {/* Pill Filter Chips Row */}
-              <div className="flex items-center gap-2 overflow-x-auto pt-4 mt-4 border-t border-[#e8ebe6] scrollbar-none">
-                <span className="text-xs font-bold text-[#868685] mr-1">Type:</span>
-                {[
-                  { id: "ALL", label: "All Types" },
-                  { id: "DEBIT", label: "Debit / Outflow" },
-                  { id: "CREDIT", label: "Credit / Inflow" },
-                  { id: "TRANSFER", label: "Transfer" },
-                ].map((type) => (
-                  <button
-                    key={type.id}
-                    onClick={() => setTxTypeFilter(type.id)}
-                    className={`px-3.5 py-1 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
-                      txTypeFilter === type.id
-                        ? "bg-[#163300] text-white"
-                        : "bg-[#e8ebe6] text-[#454745] hover:bg-[#d4d8cf]"
-                    }`}
-                  >
-                    {type.label}
-                  </button>
-                ))}
-
-                <span className="text-xs font-bold text-[#868685] ml-4 mr-1">Category:</span>
-                <button
-                  onClick={() => setTxCategoryFilter("ALL")}
-                  className={`px-3.5 py-1 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
-                    txCategoryFilter === "ALL"
-                      ? "bg-[#9fe870] text-[#163300] font-black"
-                      : "bg-[#e8ebe6] text-[#454745] hover:bg-[#d4d8cf]"
-                  }`}
+              {/* CTAs */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2">
+                <a
+                  href="#download"
+                  className="bg-[#9fe870] text-[#163300] hover:bg-[#8ed662] font-black text-sm px-7 py-4 rounded-full transition-all shadow-md flex items-center justify-center gap-2.5"
                 >
-                  All
-                </button>
-                {uniqueCategories.map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => setTxCategoryFilter(cat)}
-                    className={`px-3.5 py-1 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
-                      txCategoryFilter === cat
-                        ? "bg-[#9fe870] text-[#163300] font-black"
-                        : "bg-[#e8ebe6] text-[#454745] hover:bg-[#d4d8cf]"
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
+                  <Download className="w-5 h-5 text-[#163300] stroke-[2.5]" />
+                  <span>Download APK (v1.0)</span>
+                </a>
+                <Link
+                  href="/dashboard"
+                  className="bg-white border-2 border-[#163300] text-[#163300] hover:bg-[#f7f9f6] font-bold text-sm px-6 py-4 rounded-full transition-all flex items-center justify-center gap-2"
+                >
+                  <span>Launch Web Console</span>
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
               </div>
-            </div>
 
-            {/* Bulk Action Pill Bar (Shown when items selected) */}
-            {selectedTxIds.size > 0 && (
-              <div className="bg-[#163300] text-white p-4 rounded-2xl shadow-wise-float flex flex-wrap items-center justify-between gap-4 animate-slideDown">
-                <div className="flex items-center gap-3">
-                  <span className="bg-[#9fe870] text-[#163300] text-xs font-black px-2.5 py-1 rounded-full">
-                    {selectedTxIds.size} Selected
-                  </span>
-                  <span className="text-xs text-white/80">Perform bulk operations:</span>
+              {/* Trust Subtext */}
+              <div className="pt-4 flex flex-wrap items-center gap-y-2 gap-x-6 text-xs text-[#868685]">
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-[#163300]" />
+                  <span>100% On-Device OTP Redaction</span>
                 </div>
-
-                <div className="flex items-center gap-3">
-                  <select
-                    value={bulkCategory}
-                    onChange={(e) => setBulkCategory(e.target.value)}
-                    className="px-3 py-1.5 rounded-full text-xs font-bold bg-white/20 text-white border border-white/30 outline-none cursor-pointer"
-                  >
-                    <option value="Groceries" className="text-black">Groceries</option>
-                    <option value="Dining & Coffee" className="text-black">Dining & Coffee</option>
-                    <option value="Salary & Income" className="text-black">Salary & Income</option>
-                    <option value="Utilities" className="text-black">Utilities</option>
-                    <option value="Shopping" className="text-black">Shopping</option>
-                    <option value="Subscriptions" className="text-black">Subscriptions</option>
-                  </select>
-                  <button
-                    onClick={() => handleBulkCategorize(bulkCategory)}
-                    className="wise-btn-primary text-xs py-1.5 px-4"
-                  >
-                    Set Category
-                  </button>
-                  <button
-                    onClick={handleBulkDelete}
-                    className="bg-[#cb272f] hover:bg-red-700 text-white font-bold text-xs px-4 py-1.5 rounded-full transition-all flex items-center gap-1.5"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Delete</span>
-                  </button>
-                  <button
-                    onClick={() => setSelectedTxIds(new Set())}
-                    className="text-white/60 hover:text-white text-xs underline"
-                  >
-                    Cancel
-                  </button>
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-[#163300]" />
+                  <span>No Bank Passwords Shared</span>
                 </div>
-              </div>
-            )}
-
-            {/* High Density Wise Ledger Table */}
-            <div className="wise-card overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm border-collapse">
-                  <thead>
-                    <tr className="bg-[#f4f7f2] border-b border-[#e8ebe6] text-[11px] font-black uppercase tracking-wider text-[#868685]">
-                      <th className="p-4 w-12 text-center">
-                        <input
-                          type="checkbox"
-                          checked={
-                            filteredTransactions.length > 0 &&
-                            selectedTxIds.size === filteredTransactions.length
-                          }
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedTxIds(new Set(filteredTransactions.map((t) => t.id)));
-                            } else {
-                              setSelectedTxIds(new Set());
-                            }
-                          }}
-                          className="rounded border-[#d4d8cf] text-[#163300] focus:ring-[#163300] cursor-pointer"
-                        />
-                      </th>
-                      <th className="p-4">Merchant / Entity</th>
-                      <th className="p-4">Category</th>
-                      <th className="p-4">Origin App</th>
-                      <th className="p-4">Timestamp</th>
-                      <th className="p-4 text-right">Amount</th>
-                      <th className="p-4 text-center">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#e8ebe6]">
-                    {filteredTransactions.map((tx) => {
-                      const isSelected = selectedTxIds.has(tx.id);
-                      const isNew = newlyAddedIds.has(tx.id);
-
-                      return (
-                        <tr
-                          key={tx.id}
-                          className={`hover:bg-[#f7f9f6] transition-colors ${
-                            isSelected ? "bg-[#e2f6d5]/40" : ""
-                          } ${isNew ? "bg-[#e2f6d5]/60 animate-pulse" : ""}`}
-                        >
-                          <td className="p-4 text-center">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={(e) => {
-                                const next = new Set(selectedTxIds);
-                                if (e.target.checked) next.add(tx.id);
-                                else next.delete(tx.id);
-                                setSelectedTxIds(next);
-                              }}
-                              className="rounded border-[#d4d8cf] text-[#163300] focus:ring-[#163300] cursor-pointer"
-                            />
-                          </td>
-
-                          <td className="p-4">
-                            <div className="flex items-center gap-3">
-                              <div className="w-9 h-9 rounded-full bg-[#e8ebe6] flex items-center justify-center shrink-0">
-                                {getMerchantIcon(tx.merchant, tx.category)}
-                              </div>
-                              <div>
-                                <span className="font-bold text-[#163300] block">
-                                  {tx.merchant}
-                                </span>
-                                <span className="text-[11px] text-[#868685] font-mono truncate max-w-[240px] block">
-                                  {tx.rawNotification}
-                                </span>
-                              </div>
-                            </div>
-                          </td>
-
-                          <td className="p-4">
-                            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-[#e8ebe6] text-[#163300] border border-[#d4d8cf]">
-                              {tx.category}
-                            </span>
-                          </td>
-
-                          <td className="p-4">
-                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono bg-white border border-[#e8ebe6] text-[#454745]">
-                              {tx.sourcePackage ? tx.sourcePackage.split(".").pop() : "system"}
-                            </span>
-                          </td>
-
-                          <td className="p-4 text-xs text-[#868685]">
-                            {new Date(tx.timestamp).toLocaleString(undefined, {
-                              month: "short",
-                              day: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </td>
-
-                          <td className="p-4 text-right">
-                            <div className={`text-base font-black ${
-                              tx.type === "CREDIT" ? "text-[#054d28]" : "text-[#163300]"
-                            }`}>
-                              {tx.type === "CREDIT" ? "+" : "-"}{CURRENCY_SYMBOLS[tx.currency] || ""}{tx.amount.toFixed(2)}
-                            </div>
-                            <span className="text-[10px] text-[#868685] font-bold uppercase">
-                              {tx.currency}
-                            </span>
-                          </td>
-
-                          <td className="p-4 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <button
-                                onClick={() => {
-                                  setInspectedItem({ type: "transaction", item: tx });
-                                  setEditMerchant(tx.merchant);
-                                  setEditCategory(tx.category);
-                                  setEditAmount(tx.amount.toString());
-                                }}
-                                title="Inspect & Edit"
-                                className="p-1.5 rounded-full hover:bg-[#e8ebe6] text-[#163300] transition-colors"
-                              >
-                                <Eye className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteTransaction(tx.id)}
-                                title="Delete Record"
-                                className="p-1.5 rounded-full hover:bg-[#cb272f]/10 text-[#cb272f] transition-colors"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {filteredTransactions.length === 0 && (
-                      <tr>
-                        <td colSpan={7} className="p-12 text-center text-sm text-[#868685]">
-                          No transactions found matching the filter criteria.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ======================= SCAM RADAR TAB ======================= */}
-        {activeTab === "alerts" && (
-          <div className="space-y-6 animate-fadeIn">
-            {/* Header Radar Banner */}
-            <div className="wise-card p-6 bg-gradient-to-r from-white via-[#fff5f5] to-white border-[#cb272f]/20">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full bg-[#cb272f]/10 flex items-center justify-center text-[#cb272f]">
-                    <ShieldAlert className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-black text-[#163300]">
-                      Phishing & Threat Quarantine Radar
-                    </h2>
-                    <p className="text-xs text-[#868685]">
-                      Interception log with AI threat analysis, urgency detection, and URL inspection
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setAlertStatusFilter("ALL")}
-                    className={`px-3 py-1 rounded-full text-xs font-bold ${
-                      alertStatusFilter === "ALL" ? "bg-[#163300] text-white" : "bg-[#e8ebe6] text-[#454745]"
-                    }`}
-                  >
-                    All ({alerts.length})
-                  </button>
-                  <button
-                    onClick={() => setAlertStatusFilter("ACTIVE")}
-                    className={`px-3 py-1 rounded-full text-xs font-bold ${
-                      alertStatusFilter === "ACTIVE" ? "bg-[#cb272f] text-white" : "bg-[#e8ebe6] text-[#454745]"
-                    }`}
-                  >
-                    Active Only ({normalizedStats.activeAlerts})
-                  </button>
-                  <button
-                    onClick={() => setAlertStatusFilter("DISMISSED")}
-                    className={`px-3 py-1 rounded-full text-xs font-bold ${
-                      alertStatusFilter === "DISMISSED" ? "bg-[#163300] text-white" : "bg-[#e8ebe6] text-[#454745]"
-                    }`}
-                  >
-                    Dismissed
-                  </button>
+                <div className="flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-[#163300]" />
+                  <span>Google Play Policy Compliant</span>
                 </div>
               </div>
             </div>
 
-            {/* Alerts List */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {filteredAlerts.map((alert) => {
-                const cues = parseCues(alert.phishingCues);
-
-                return (
-                  <div
-                    key={alert.id}
-                    className={`wise-card p-6 flex flex-col justify-between transition-all ${
-                      alert.isDismissed
-                        ? "opacity-60 bg-[#f7f9f6] border-[#e8ebe6]"
-                        : "border-[#cb272f]/30 hover:border-[#cb272f] shadow-sm"
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          {getRiskBadge(alert.riskScore)}
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-[#e8ebe6] text-[#454745]">
-                            {alert.sourcePackage ? alert.sourcePackage.split(".").pop() : "sms"}
-                          </span>
-                        </div>
-                        <span className="text-xs text-[#868685]">
-                          {new Date(alert.timestamp).toLocaleDateString(undefined, {
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
-                      </div>
-
-                      <h4 className="text-base font-bold text-[#163300] mb-2">
-                        {alert.reason}
-                      </h4>
-
-                      <div className="bg-[#f4f7f2] p-3 rounded-xl border border-[#e8ebe6] mb-4">
-                        <span className="text-[10px] uppercase font-bold text-[#868685] block mb-1">
-                          Captured Notification
-                        </span>
-                        <p className="text-xs font-mono text-[#163300] break-words">
-                          "{alert.rawNotification}"
-                        </p>
-                      </div>
-
-                      {/* Phishing Cues */}
-                      {cues.length > 0 && (
-                        <div className="mb-4">
-                          <span className="text-[10px] uppercase font-bold text-[#868685] block mb-1.5">
-                            Identified Threat Cues
-                          </span>
-                          <div className="flex flex-wrap gap-1.5">
-                            {cues.map((cue, idx) => (
-                              <span
-                                key={idx}
-                                className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#cb272f]/10 text-[#cb272f] border border-[#cb272f]/20"
-                              >
-                                {cue}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="pt-4 border-t border-[#e8ebe6] flex items-center justify-between">
-                      <button
-                        onClick={() => copyText(alert.rawNotification, alert.id)}
-                        className="text-xs font-bold text-[#454745] hover:text-[#163300] flex items-center gap-1.5"
-                      >
-                        {copiedId === alert.id ? <Check className="w-3.5 h-3.5 text-[#054d28]" /> : <Copy className="w-3.5 h-3.5" />}
-                        <span>{copiedId === alert.id ? "Copied" : "Copy Payload"}</span>
-                      </button>
-
-                      {!alert.isDismissed ? (
-                        <button
-                          onClick={() => handleDismissAlert(alert.id)}
-                          className="wise-btn-secondary text-xs py-1 px-3.5"
-                        >
-                          Dismiss Threat
-                        </button>
-                      ) : (
-                        <span className="text-xs font-bold text-[#868685]">Resolved</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-              {filteredAlerts.length === 0 && (
-                <div className="col-span-2 wise-card p-12 text-center text-sm text-[#868685]">
-                  <ShieldCheck className="w-10 h-10 text-[#054d28] mx-auto mb-2" />
-                  No threats found matching current radar filters.
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ======================= ANALYTICS TAB ======================= */}
-        {activeTab === "analytics" && (
-          <div className="space-y-8 animate-fadeIn">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="wise-card p-6">
-                <span className="text-xs font-bold uppercase text-[#868685] block mb-1">
-                  Total Flow Analysed
-                </span>
-                <div className="text-3xl font-black text-[#163300]">
-                  {formatCurrency(normalizedStats.totalSpent + normalizedStats.totalReceived, baseCurrency)}
-                </div>
-                <p className="text-xs text-[#868685] mt-1">Aggregate combined volume in {baseCurrency}</p>
-              </div>
-
-              <div className="wise-card p-6">
-                <span className="text-xs font-bold uppercase text-[#868685] block mb-1">
-                  Debit to Inflow Ratio
-                </span>
-                <div className="text-3xl font-black text-[#163300]">
-                  {normalizedStats.totalReceived > 0
-                    ? ((normalizedStats.totalSpent / normalizedStats.totalReceived) * 100).toFixed(1) + "%"
-                    : "100%"}
-                </div>
-                <p className="text-xs text-[#868685] mt-1">Outflow as percentage of total received</p>
-              </div>
-
-              <div className="wise-card p-6">
-                <span className="text-xs font-bold uppercase text-[#868685] block mb-1">
-                  Threat Ratio
-                </span>
-                <div className="text-3xl font-black text-[#cb272f]">
-                  {normalizedStats.totalTransactions > 0
-                    ? ((alerts.length / (normalizedStats.totalTransactions + alerts.length)) * 100).toFixed(1) + "%"
-                    : "0%"}
-                </div>
-                <p className="text-xs text-[#868685] mt-1">Scam messages intercepted vs legit notifications</p>
-              </div>
-            </div>
-
-            {/* Category Breakdown Progress Bars */}
-            <div className="wise-card p-8">
-              <h3 className="text-xl font-black text-[#163300] mb-6">
-                Expense Distribution by Category
-              </h3>
-
-              <div className="space-y-6">
-                {Object.entries(normalizedStats.categoryBreakdown)
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([cat, amount], idx) => {
-                    const pct = normalizedStats.totalSpent > 0 ? (amount / normalizedStats.totalSpent) * 100 : 0;
-                    const colors = ["#163300", "#9fe870", "#054d28", "#0b4c72", "#454745", "#6a6c6a"];
-                    const barColor = colors[idx % colors.length];
-
-                    return (
-                      <div key={cat} className="space-y-1.5">
-                        <div className="flex items-center justify-between text-sm font-bold">
-                          <span className="text-[#163300]">{cat}</span>
-                          <span className="text-[#454745]">
-                            {formatCurrency(amount, baseCurrency)} ({pct.toFixed(1)}%)
-                          </span>
-                        </div>
-                        <div className="w-full h-3 rounded-full bg-[#e8ebe6] overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all duration-500"
-                            style={{ width: `${Math.max(pct, 2)}%`, backgroundColor: barColor }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                {Object.keys(normalizedStats.categoryBreakdown).length === 0 && (
-                  <p className="text-center text-xs text-[#868685] py-8">
-                    No expense data available to graph.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ======================= SIMULATOR TAB ======================= */}
-        {activeTab === "simulator" && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fadeIn">
-            {/* Left Control Panel */}
-            <div className="lg:col-span-6 space-y-6">
-              <div className="wise-card p-6">
-                <h3 className="text-lg font-black text-[#163300] mb-1">
-                  Interactive Notification Simulator
-                </h3>
-                <p className="text-xs text-[#868685] mb-4">
-                  Select a live financial or phishing scenario, or craft custom payload to test AI extraction and local regex OTP drops.
-                </p>
-
-                {/* Presets Pills */}
-                <div className="space-y-2 mb-6">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#868685] block">
-                    Instant Test Presets
-                  </span>
-                  <div className="flex flex-wrap gap-2">
-                    {PRESETS.map((preset, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => {
-                          setSimTitle(preset.title);
-                          setSimText(preset.text);
-                          setSimPackage(preset.packageName);
-                        }}
-                        className="px-3 py-1.5 rounded-full text-xs font-bold bg-[#f4f7f2] hover:bg-[#e2f6d5] border border-[#d4d8cf] text-[#163300] transition-colors text-left"
-                      >
-                        {preset.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Form Fields */}
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-xs font-bold text-[#163300] block mb-1">
-                      Notification Title / Sender
-                    </label>
-                    <input
-                      type="text"
-                      value={simTitle}
-                      onChange={(e) => setSimTitle(e.target.value)}
-                      className="w-full px-3.5 py-2 rounded-xl border border-[#d4d8cf] focus:border-[#163300] text-sm text-[#163300] outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-bold text-[#163300] block mb-1">
-                      Notification Content
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={simText}
-                      onChange={(e) => setSimText(e.target.value)}
-                      className="w-full px-3.5 py-2 rounded-xl border border-[#d4d8cf] focus:border-[#163300] text-sm text-[#163300] outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-bold text-[#163300] block mb-1">
-                      Source Package Name
-                    </label>
-                    <input
-                      type="text"
-                      value={simPackage}
-                      onChange={(e) => setSimPackage(e.target.value)}
-                      className="w-full px-3.5 py-2 rounded-xl border border-[#d4d8cf] focus:border-[#163300] text-xs font-mono text-[#163300] outline-none"
-                    />
-                  </div>
-
-                  <button
-                    onClick={handleRunSimulator}
-                    disabled={simLoading}
-                    className="w-full wise-btn-primary gap-2 py-3 shadow-md mt-4"
-                  >
-                    {simLoading ? (
-                      <RefreshCw className="w-4 h-4 animate-spin text-[#163300]" />
-                    ) : (
-                      <Play className="w-4 h-4 fill-[#163300]" />
-                    )}
-                    <span>{simLoading ? "Evaluating AI Guardian..." : "Process Notification Event"}</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Right Live Preview / Result */}
-            <div className="lg:col-span-6 space-y-6">
-              {/* Phone Mock / Notification Preview */}
-              <div className="wise-card p-6">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-[#868685] block mb-3">
-                  Mobile OS Notification Mock
-                </span>
-                <div className="bg-white rounded-2xl border-2 border-[#163300] p-4 shadow-sm flex items-start gap-3.5">
-                  <div className="w-10 h-10 rounded-xl bg-[#163300] text-[#9fe870] flex items-center justify-center font-black text-lg shrink-0">
-                    <Smartphone className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between text-xs text-[#868685] mb-0.5">
-                      <span className="font-bold text-[#163300]">{simTitle}</span>
-                      <span>Now</span>
-                    </div>
-                    <p className="text-xs text-[#454745] font-medium leading-relaxed break-words">
-                      {simText}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Engine Response */}
-              {simResult && (
-                <div className="wise-card p-6 animate-fadeIn">
-                  <div className="flex items-center justify-between mb-4">
-                    <h4 className="text-sm font-black text-[#163300]">
-                      AI Guardian Outcome
-                    </h4>
-                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#e2f6d5] text-[#163300]">
-                      Status: {simResult.outcome || (simResult.error ? "Error" : "Processed")}
+            {/* Right Interactive Mockup / Hero Card */}
+            <div className="lg:col-span-5">
+              <div className="relative mx-auto max-w-md bg-[#163300] text-white rounded-3xl p-6 sm:p-7 shadow-2xl border-4 border-[#054d28]">
+                {/* Status Bar */}
+                <div className="flex items-center justify-between pb-5 border-b border-[#054d28]">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full bg-[#9fe870] animate-ping" />
+                    <span className="text-xs font-mono font-bold tracking-wider text-[#9fe870] uppercase">
+                      Live Notification Guardian
                     </span>
                   </div>
-
-                  <div className="bg-[#163300] text-white p-4 rounded-xl font-mono text-xs overflow-x-auto max-h-80">
-                    <pre>{JSON.stringify(simResult, null, 2)}</pre>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </main>
-
-      {/* Slide-over Inspector Modal */}
-      {inspectedItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fadeIn">
-          <div className="wise-card bg-white max-w-lg w-full p-6 shadow-wise-float relative max-h-[90vh] overflow-y-auto">
-            <button
-              onClick={() => setInspectedItem(null)}
-              className="absolute top-5 right-5 text-[#868685] hover:text-[#163300] p-1 rounded-full hover:bg-[#e8ebe6]"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            {inspectedItem.type === "transaction" && (
-              <div>
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="px-3 py-1 rounded-full text-xs font-black bg-[#163300] text-white">
-                    Edit Record
-                  </span>
-                  <span className="text-xs text-[#868685] font-mono">
-                    ID: {inspectedItem.item.id.slice(0, 8)}...
-                  </span>
+                  <span className="text-[10px] font-mono text-[#868685]">Local Engine</span>
                 </div>
 
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-xs font-bold text-[#163300] block mb-1">
-                      Merchant Name
-                    </label>
-                    <input
-                      type="text"
-                      value={editMerchant}
-                      onChange={(e) => setEditMerchant(e.target.value)}
-                      className="w-full px-3.5 py-2 rounded-xl border border-[#d4d8cf] text-sm text-[#163300] outline-none"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-bold text-[#163300] block mb-1">
-                        Category
-                      </label>
-                      <input
-                        type="text"
-                        value={editCategory}
-                        onChange={(e) => setEditCategory(e.target.value)}
-                        className="w-full px-3.5 py-2 rounded-xl border border-[#d4d8cf] text-sm text-[#163300] outline-none"
-                      />
+                {/* Simulated Notification Banner */}
+                <div className="mt-5 space-y-4">
+                  <div className="bg-[#054d28] border border-[#9fe870]/30 rounded-2xl p-4 shadow-inner">
+                    <div className="flex items-center justify-between text-[11px] text-[#9fe870] font-semibold mb-1">
+                      <span className="flex items-center gap-1">
+                        <Smartphone className="w-3.5 h-3.5" /> Chase Push Intercepted
+                      </span>
+                      <span>Just Now</span>
                     </div>
-                    <div>
-                      <label className="text-xs font-bold text-[#163300] block mb-1">
-                        Amount
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={editAmount}
-                        onChange={(e) => setEditAmount(e.target.value)}
-                        className="w-full px-3.5 py-2 rounded-xl border border-[#d4d8cf] text-sm text-[#163300] outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="bg-[#f4f7f2] p-3 rounded-xl border border-[#e8ebe6]">
-                    <span className="text-[10px] uppercase font-bold text-[#868685] block mb-1">
-                      Original Notification Intercepted
-                    </span>
-                    <p className="text-xs font-mono text-[#163300] break-words">
-                      "{(inspectedItem.item as Transaction).rawNotification}"
+                    <p className="text-xs text-white font-medium">
+                      You spent $84.20 at Trader Joe&apos;s Market on card ending in 8832.
                     </p>
+                    <div className="mt-2.5 flex items-center gap-2 text-[10px] font-mono text-[#9fe870] bg-[#163300] px-2.5 py-1 rounded-lg">
+                      <Lock className="w-3 h-3 text-[#9fe870]" />
+                      <span>OTP & Credentials Purged Locally</span>
+                    </div>
                   </div>
 
-                  <div className="flex items-center justify-end gap-3 pt-4 border-t border-[#e8ebe6]">
-                    <button
-                      onClick={() => setInspectedItem(null)}
-                      className="wise-btn-secondary text-xs py-2 px-4"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleSaveInspectedTransaction}
-                      disabled={isSavingEdit}
-                      className="wise-btn-primary text-xs py-2 px-5"
-                    >
-                      {isSavingEdit ? "Saving..." : "Save Changes"}
-                    </button>
+                  {/* AI Transformation Arrow */}
+                  <div className="flex items-center justify-center gap-2 text-xs font-bold text-[#9fe870]">
+                    <Sparkles className="w-4 h-4 text-[#9fe870]" />
+                    <span>Instant AI Structuring (120ms)</span>
+                  </div>
+
+                  {/* Output Card */}
+                  <div className="bg-white text-[#163300] rounded-2xl p-4 shadow-lg">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#868685]">
+                          Merchant & Category
+                        </span>
+                        <h4 className="text-base font-black text-[#163300]">Trader Joe&apos;s Market</h4>
+                        <span className="inline-block mt-1 bg-[#e2f6d5] text-[#163300] text-[10px] font-bold px-2 py-0.5 rounded-full">
+                          Groceries & Essentials
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-lg font-black text-[#163300]">-$84.20</span>
+                        <span className="block text-[10px] text-[#868685] font-semibold">USD • Room DB Synced</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Anti-Scam Shield Highlight */}
+                  <div className="bg-[#cb272f]/20 border border-[#cb272f]/50 rounded-2xl p-3.5 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2 text-white">
+                      <ShieldAlert className="w-4 h-4 text-[#ff8a8f]" />
+                      <span className="font-bold text-[11px]">Phishing Radar Active</span>
+                    </div>
+                    <span className="bg-[#cb272f] text-white text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
+                      0 Threats Today
+                    </span>
                   </div>
                 </div>
               </div>
-            )}
+            </div>
           </div>
         </div>
-      )}
+      </section>
+
+      {/* 3. TRUST METRICS BAR */}
+      <section className="bg-white border-y border-[#e8ebe6] py-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+            <div>
+              <div className="text-3xl sm:text-4xl font-black text-[#163300] tracking-tight">100%</div>
+              <div className="text-xs font-semibold text-[#868685] mt-1">On-Device OTP Redaction</div>
+            </div>
+            <div>
+              <div className="text-3xl sm:text-4xl font-black text-[#163300] tracking-tight">0</div>
+              <div className="text-xs font-semibold text-[#868685] mt-1">Plaintext Credentials Saved</div>
+            </div>
+            <div>
+              <div className="text-3xl sm:text-4xl font-black text-[#163300] tracking-tight">99.4%</div>
+              <div className="text-xs font-semibold text-[#868685] mt-1">Phishing Detection Accuracy</div>
+            </div>
+            <div>
+              <div className="text-3xl sm:text-4xl font-black text-[#163300] tracking-tight">&lt;150ms</div>
+              <div className="text-xs font-semibold text-[#868685] mt-1">Zero-Latency Interception</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 4. INTERACTIVE DEMO (Wise-style high contrast showcase) */}
+      <section id="demo" className="py-20 md:py-28">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-3xl mx-auto mb-14">
+            <span className="text-xs font-black uppercase tracking-widest text-[#054d28] bg-[#e2f6d5] px-3.5 py-1.5 rounded-full border border-[#9fe870]">
+              Interactive Sandbox
+            </span>
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-[#163300] tracking-tight mt-4">
+              See NotifAi parse notifications in real-time
+            </h2>
+            <p className="text-sm sm:text-base text-[#6a6c6a] mt-3">
+              Select any sample bank or SMS notification below to watch how our AI engine structures transactions and isolates threats.
+            </p>
+          </div>
+
+          {/* Preset Buttons */}
+          <div className="flex flex-wrap justify-center gap-2 mb-8">
+            {SAMPLE_INTERACTIONS.map((sample) => (
+              <button
+                key={sample.id}
+                onClick={() => setSelectedSample(sample)}
+                className={`text-xs font-bold px-4 py-2.5 rounded-full transition-all cursor-pointer ${
+                  selectedSample.id === sample.id
+                    ? "bg-[#163300] text-[#9fe870] shadow-md"
+                    : "bg-white text-[#454745] border border-[#d4d8cf] hover:border-[#163300]"
+                }`}
+              >
+                {sample.isThreat ? "🚨 " : "💳 "}
+                {sample.merchant}
+              </button>
+            ))}
+          </div>
+
+          {/* Interactive Screen Display */}
+          <div className="bg-white rounded-3xl border border-[#e8ebe6] p-6 sm:p-10 shadow-sm max-w-4xl mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+              {/* Raw Notification Input */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-[#868685]">
+                    Incoming Device Notification
+                  </span>
+                  <span className="text-[10px] font-mono bg-[#f7f9f6] text-[#163300] px-2 py-0.5 rounded-md border border-[#e8ebe6]">
+                    {selectedSample.source}
+                  </span>
+                </div>
+
+                <div className="bg-[#f7f9f6] border border-[#e8ebe6] rounded-2xl p-4 text-xs font-mono text-[#163300] leading-relaxed">
+                  {selectedSample.raw}
+                </div>
+
+                <div className="flex items-center gap-2 text-[11px] font-bold text-[#054d28] bg-[#e2f6d5] p-3 rounded-xl">
+                  <ShieldCheck className="w-4 h-4 text-[#163300]" />
+                  <span>On-Device Filter: {selectedSample.otpStatus}</span>
+                </div>
+              </div>
+
+              {/* AI Structured Output */}
+              <div className="space-y-4">
+                <span className="text-xs font-bold uppercase tracking-wider text-[#868685]">
+                  NotifAi Intelligence Output
+                </span>
+
+                {selectedSample.isThreat ? (
+                  <div className="bg-rose-50 border-2 border-[#cb272f] rounded-2xl p-5 text-[#cb272f]">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="font-black text-sm flex items-center gap-1.5">
+                        <AlertTriangle className="w-4 h-4" /> HIGH PHISHING RISK
+                      </span>
+                      <span className="bg-[#cb272f] text-white text-xs font-black px-2.5 py-0.5 rounded-full">
+                        Risk Score: {selectedSample.riskScore}/100
+                      </span>
+                    </div>
+                    <p className="text-xs text-rose-950 font-medium mb-3">
+                      {selectedSample.threatReason}
+                    </p>
+                    <div className="text-[11px] font-bold text-rose-900 bg-white/70 p-2.5 rounded-xl border border-rose-200">
+                      Recommendation: Malicious link suppressed. Do not submit credentials.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-[#163300] text-white rounded-2xl p-5 shadow-lg space-y-4">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <span className="text-[10px] font-mono text-[#9fe870] uppercase">
+                          Classified Expense
+                        </span>
+                        <h4 className="text-xl font-black text-white">{selectedSample.merchant}</h4>
+                      </div>
+                      <span className="text-2xl font-black text-[#9fe870]">
+                        {selectedSample.amount}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs border-t border-[#054d28] pt-3">
+                      <div>
+                        <span className="text-[10px] text-[#868685] block">Category:</span>
+                        <span className="font-bold text-white">{selectedSample.category}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-[#868685] block">Flow Type:</span>
+                        <span className="font-bold text-white">{selectedSample.type}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="text-right">
+                  <Link
+                    href="/dashboard"
+                    className="text-xs font-bold text-[#163300] hover:underline inline-flex items-center gap-1"
+                  >
+                    <span>Test custom notification in Web Console</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 5. CORE BENTO FEATURES (Refero Wise design specs) */}
+      <section id="features" className="py-20 bg-white border-t border-[#e8ebe6]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <span className="text-xs font-black uppercase tracking-widest text-[#054d28] bg-[#e2f6d5] px-3.5 py-1.5 rounded-full border border-[#9fe870]">
+              Built Different
+            </span>
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-[#163300] tracking-tight mt-4">
+              Designed around privacy sovereignty
+            </h2>
+            <p className="text-sm sm:text-base text-[#6a6c6a] mt-3">
+              Traditional finance apps demand your login passwords and sell transaction telemetry. NotifAi is built on an entirely inverted architecture.
+            </p>
+          </div>
+
+          {/* Bento Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Bento Card 1: OTP Stripper */}
+            <div className="bg-[#f7f9f6] border border-[#e8ebe6] rounded-3xl p-8 flex flex-col justify-between hover:border-[#163300] transition-colors">
+              <div>
+                <div className="w-12 h-12 rounded-2xl bg-[#163300] text-[#9fe870] flex items-center justify-center mb-6">
+                  <Lock className="w-6 h-6 text-[#9fe870]" />
+                </div>
+                <h3 className="text-xl font-bold text-[#163300] mb-2">Zero-Knowledge OTP Stripper</h3>
+                <p className="text-xs sm:text-sm text-[#6a6c6a] leading-relaxed">
+                  Authentication tokens, 2FA digits, and passwords are permanently dropped inside Android device memory. Sensitive credentials never leave your hardware.
+                </p>
+              </div>
+              <div className="mt-6 pt-4 border-t border-[#e8ebe6] flex items-center gap-2 text-xs font-bold text-[#163300]">
+                <Check className="w-4 h-4 text-[#054d28]" />
+                <span>Local Regex Pre-filter</span>
+              </div>
+            </div>
+
+            {/* Bento Card 2: AI Financial Classifier */}
+            <div className="bg-[#163300] text-white rounded-3xl p-8 flex flex-col justify-between shadow-lg">
+              <div>
+                <div className="w-12 h-12 rounded-2xl bg-[#054d28] text-[#9fe870] flex items-center justify-center mb-6">
+                  <Cpu className="w-6 h-6 text-[#9fe870]" />
+                </div>
+                <h3 className="text-xl font-bold text-white mb-2">Typesafe AI Engine</h3>
+                <p className="text-xs sm:text-sm text-[#e8ebe6] leading-relaxed">
+                  Understands messy push notifications from 100+ global banks. Automatically normalizes merchant names, cleans up terminal IDs, and assigns budget categories.
+                </p>
+              </div>
+              <div className="mt-6 pt-4 border-t border-[#054d28] flex items-center gap-2 text-xs font-bold text-[#9fe870]">
+                <Zap className="w-4 h-4 text-[#9fe870]" />
+                <span>Zero Retention AI Processing</span>
+              </div>
+            </div>
+
+            {/* Bento Card 3: Phishing Shield */}
+            <div className="bg-[#f7f9f6] border border-[#e8ebe6] rounded-3xl p-8 flex flex-col justify-between hover:border-[#163300] transition-colors">
+              <div>
+                <div className="w-12 h-12 rounded-2xl bg-[#cb272f] text-white flex items-center justify-center mb-6">
+                  <ShieldAlert className="w-6 h-6 text-white" />
+                </div>
+                <h3 className="text-xl font-bold text-[#163300] mb-2">Scam & Phishing Radar</h3>
+                <p className="text-xs sm:text-sm text-[#6a6c6a] leading-relaxed">
+                  Real-time scoring for urgent coercion cues, spoofed domains, and fake bank notifications. Auto-hides malicious notifications so you never fall victim.
+                </p>
+              </div>
+              <div className="mt-6 pt-4 border-t border-[#e8ebe6] flex items-center gap-2 text-xs font-bold text-[#cb272f]">
+                <AlertTriangle className="w-4 h-4" />
+                <span>Urgency & Spoofing Heuristics</span>
+              </div>
+            </div>
+
+            {/* Bento Card 4: Hybrid Sync */}
+            <div className="bg-[#f7f9f6] border border-[#e8ebe6] rounded-3xl p-8 flex flex-col justify-between md:col-span-2 hover:border-[#163300] transition-colors">
+              <div>
+                <div className="w-12 h-12 rounded-2xl bg-[#e2f6d5] text-[#163300] flex items-center justify-center mb-6">
+                  <Layers className="w-6 h-6 text-[#163300]" />
+                </div>
+                <h3 className="text-xl font-bold text-[#163300] mb-2">
+                  Offline-First Local Room DB + Encrypted Neon Cloud
+                </h3>
+                <p className="text-xs sm:text-sm text-[#6a6c6a] leading-relaxed max-w-xl">
+                  NotifAi runs seamlessly offline. When cloud sync is enabled, your data is isolated using Clerk user IDs and stored in Neon PostgreSQL over TLS 1.3. Toggle Offline-Only mode anytime.
+                </p>
+              </div>
+              <div className="mt-6 pt-4 border-t border-[#e8ebe6] flex flex-wrap gap-4 text-xs font-bold text-[#163300]">
+                <span className="flex items-center gap-1.5"><Check className="w-4 h-4 text-[#054d28]" /> Room Database</span>
+                <span className="flex items-center gap-1.5"><Check className="w-4 h-4 text-[#054d28]" /> Neon Serverless</span>
+                <span className="flex items-center gap-1.5"><Check className="w-4 h-4 text-[#054d28]" /> Clerk Auth JWT</span>
+              </div>
+            </div>
+
+            {/* Bento Card 5: Self-Service Deletion */}
+            <div className="bg-[#f7f9f6] border border-[#e8ebe6] rounded-3xl p-8 flex flex-col justify-between hover:border-[#163300] transition-colors">
+              <div>
+                <div className="w-12 h-12 rounded-2xl bg-white border border-[#d4d8cf] text-[#163300] flex items-center justify-center mb-6">
+                  <Trash2 className="w-6 h-6 text-[#163300]" />
+                </div>
+                <h3 className="text-xl font-bold text-[#163300] mb-2">1-Click Total Data Deletion</h3>
+                <p className="text-xs sm:text-sm text-[#6a6c6a] leading-relaxed">
+                  Compliant with Google Play policies. Delete your account and purge all server transactions anytime directly from our public web portal.
+                </p>
+              </div>
+              <div className="mt-6 pt-4 border-t border-[#e8ebe6]">
+                <Link
+                  href="/delete-account"
+                  className="text-xs font-bold text-[#163300] hover:underline inline-flex items-center gap-1"
+                >
+                  <span>Explore Account Deletion</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 6. GOOGLE PLAY COMPLIANCE & DOWNLOAD SECTION */}
+      <section id="download" className="py-20 md:py-28 bg-[#163300] text-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="bg-[#054d28] border border-[#9fe870]/30 rounded-3xl p-8 sm:p-12 lg:p-16 shadow-2xl">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
+              <div className="lg:col-span-8 space-y-6">
+                <div className="inline-flex items-center gap-2 bg-[#9fe870]/20 text-[#9fe870] border border-[#9fe870]/50 px-3.5 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider">
+                  <Smartphone className="w-4 h-4 text-[#9fe870]" /> Google Play Ready
+                </div>
+
+                <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight">
+                  Install NotifAi on your Android device today
+                </h2>
+
+                <p className="text-sm sm:text-base text-[#e8ebe6] leading-relaxed max-w-xl">
+                  Ready for deployment to Google Play Store. Built with Kotlin, Jetpack Compose, Room SQLite, and local biometric hardware security.
+                </p>
+
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 pt-2">
+                  <a
+                    href="/ainotif-debug.apk"
+                    download="NotifAi-release.apk"
+                    className="bg-[#9fe870] text-[#163300] hover:bg-[#8ed662] font-black text-sm px-8 py-4 rounded-full transition-all shadow-md flex items-center justify-center gap-2.5"
+                  >
+                    <Download className="w-5 h-5 text-[#163300] stroke-[2.5]" />
+                    <span>Download APK Directly (21 MB)</span>
+                  </a>
+
+                  <button
+                    onClick={handleCopyApkLink}
+                    className="bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-5 py-4 rounded-full transition-all flex items-center justify-center gap-2 cursor-pointer border border-white/20"
+                  >
+                    {copiedLink ? <Check className="w-4 h-4 text-[#9fe870]" /> : <Copy className="w-4 h-4" />}
+                    <span>{copiedLink ? "Link Copied!" : "Copy APK Download Link"}</span>
+                  </button>
+                </div>
+
+                {/* Google Play Data Safety Compliance Highlights */}
+                <div className="pt-4 border-t border-[#163300] flex flex-wrap gap-4 text-xs text-[#e8ebe6]">
+                  <span className="flex items-center gap-1.5 text-[#9fe870]">
+                    <CheckCircle2 className="w-4 h-4" /> Google Play Account Deletion Compliant
+                  </span>
+                  <span className="flex items-center gap-1.5 text-[#9fe870]">
+                    <CheckCircle2 className="w-4 h-4" /> Verified Data Safety Declaration
+                  </span>
+                  <span className="flex items-center gap-1.5 text-[#9fe870]">
+                    <CheckCircle2 className="w-4 h-4" /> TLS 1.3 In-Transit Encryption
+                  </span>
+                </div>
+              </div>
+
+              {/* QR Code Container */}
+              <div className="lg:col-span-4 flex flex-col items-center justify-center">
+                <div className="bg-white p-5 rounded-3xl shadow-xl flex flex-col items-center">
+                  {qrCodeUrl ? (
+                    <img
+                      src={qrCodeUrl}
+                      alt="NotifAi APK Download QR"
+                      className="w-44 h-44 rounded-xl"
+                    />
+                  ) : (
+                    <div className="w-44 h-44 flex items-center justify-center text-xs text-[#868685]">
+                      Generating QR...
+                    </div>
+                  )}
+                  <p className="text-[11px] font-bold text-[#163300] mt-3 text-center">
+                    Scan with Android Camera to Install
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 7. COMPARISON TABLE */}
+      <section className="py-20 bg-white border-t border-[#e8ebe6]">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-14">
+            <h2 className="text-2xl sm:text-3xl font-black text-[#163300] tracking-tight">
+              How NotifAi compares to traditional options
+            </h2>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs sm:text-sm text-left border-collapse">
+              <thead>
+                <tr className="border-b-2 border-[#163300]">
+                  <th className="py-3 px-4 font-bold text-[#868685]">Feature</th>
+                  <th className="py-3 px-4 font-black text-[#163300] bg-[#e2f6d5] rounded-t-xl">NotifAi</th>
+                  <th className="py-3 px-4 font-bold text-[#868685]">Plaid / Aggregators</th>
+                  <th className="py-3 px-4 font-bold text-[#868685]">Manual Budgeting</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#e8ebe6]">
+                <tr>
+                  <td className="py-3.5 px-4 font-semibold text-[#163300]">Requires Bank Password / Login</td>
+                  <td className="py-3.5 px-4 font-bold text-emerald-800 bg-[#e2f6d5]">Never (0 credentials)</td>
+                  <td className="py-3.5 px-4 text-rose-700">Yes (Shares credentials)</td>
+                  <td className="py-3.5 px-4 text-[#868685]">No</td>
+                </tr>
+                <tr>
+                  <td className="py-3.5 px-4 font-semibold text-[#163300]">On-Device OTP Redaction</td>
+                  <td className="py-3.5 px-4 font-bold text-emerald-800 bg-[#e2f6d5]">Instant native regex</td>
+                  <td className="py-3.5 px-4 text-[#868685]">N/A</td>
+                  <td className="py-3.5 px-4 text-[#868685]">N/A</td>
+                </tr>
+                <tr>
+                  <td className="py-3.5 px-4 font-semibold text-[#163300]">Real-Time Phishing & Scam Radar</td>
+                  <td className="py-3.5 px-4 font-bold text-emerald-800 bg-[#e2f6d5]">Included</td>
+                  <td className="py-3.5 px-4 text-[#868685]">No</td>
+                  <td className="py-3.5 px-4 text-[#868685]">No</td>
+                </tr>
+                <tr>
+                  <td className="py-3.5 px-4 font-semibold text-[#163300]">Offline Room Database Support</td>
+                  <td className="py-3.5 px-4 font-bold text-emerald-800 bg-[#e2f6d5]">Full offline capability</td>
+                  <td className="py-3.5 px-4 text-[#868685]">No (Cloud only)</td>
+                  <td className="py-3.5 px-4 text-emerald-700">Varies</td>
+                </tr>
+                <tr>
+                  <td className="py-3.5 px-4 font-semibold text-[#163300]">Public 1-Click Account Deletion</td>
+                  <td className="py-3.5 px-4 font-bold text-emerald-800 bg-[#e2f6d5]">Instant via Web Portal</td>
+                  <td className="py-3.5 px-4 text-[#868685]">Complex support tickets</td>
+                  <td className="py-3.5 px-4 text-[#868685]">Varies</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      {/* 7.5 PRICING & PLANS (Clerk Billing $10/mo Pro Plan) */}
+      <section id="pricing" className="py-20 bg-white border-t border-[#e8ebe6]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-2xl mx-auto mb-16">
+            <div className="inline-flex items-center gap-2 bg-[#e2f6d5] border border-[#9fe870] px-3.5 py-1.5 rounded-full text-xs font-bold text-[#163300] uppercase tracking-wider mb-3">
+              <Sparkles className="w-3.5 h-3.5 text-[#054d28]" />
+              <span>Transparent & Fair Pricing</span>
+            </div>
+            <h2 className="text-3xl sm:text-4xl font-black text-[#163300] tracking-tight">
+              Simple Protection. Predictable Value.
+            </h2>
+            <p className="text-sm text-[#868685] mt-2">
+              Start with our powerful Free tier. Upgrade anytime to Pro Guardian for $10/month with Clerk Billing to unlock unlimited AI analysis, data export, and threat radar forensics.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+            {/* Free Tier */}
+            <div className="rounded-3xl p-8 border border-[#e8ebe6] bg-[#f7f9f6] flex flex-col justify-between shadow-sm hover:border-[#d4d8cf] transition-all">
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-xs font-bold uppercase tracking-wider text-[#868685]">Starter Tier</span>
+                  <span className="px-3 py-1 rounded-full text-xs font-bold bg-[#e8ebe6] text-[#163300]">
+                    Free Forever
+                  </span>
+                </div>
+                <h3 className="text-2xl font-black text-[#163300]">Free Guardian</h3>
+                <div className="mt-2 mb-6 flex items-baseline gap-1">
+                  <span className="text-4xl font-black text-[#163300]">$0</span>
+                  <span className="text-xs font-semibold text-[#868685]">/ forever</span>
+                </div>
+
+                <p className="text-xs text-[#454745] mb-6">
+                  Essential on-device OTP drop and basic transaction notifications for casual everyday monitoring.
+                </p>
+
+                <ul className="space-y-3 mb-8 text-xs text-[#454745]">
+                  <li className="flex items-center gap-2.5">
+                    <Check className="w-4 h-4 text-[#163300] shrink-0" />
+                    <span>Up to 20 AI notification analyses / month</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <Check className="w-4 h-4 text-[#163300] shrink-0" />
+                    <span>Recent 15 transaction history view</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <Check className="w-4 h-4 text-[#163300] shrink-0" />
+                    <span>Standard scam probability scoring</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <Check className="w-4 h-4 text-[#163300] shrink-0" />
+                    <span>Zero-knowledge local OTP stripping</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <Check className="w-4 h-4 text-[#163300] shrink-0" />
+                    <span>Single-device mobile synchronization</span>
+                  </li>
+                </ul>
+              </div>
+
+              <Link
+                href="/dashboard"
+                className="w-full py-3.5 rounded-2xl bg-white border border-[#d4d8cf] hover:bg-[#e8ebe6] text-[#163300] font-bold text-center text-xs shadow-sm transition-all"
+              >
+                Launch Free Console
+              </Link>
+            </div>
+
+            {/* Pro Tier */}
+            <div className="rounded-3xl p-8 border-2 border-[#9fe870] bg-[#163300] text-white flex flex-col justify-between relative shadow-xl">
+              <div className="absolute top-6 right-6">
+                <span className="bg-[#9fe870] text-[#163300] text-xs font-black px-3 py-1 rounded-full uppercase tracking-wider">
+                  Popular
+                </span>
+              </div>
+
+              <div>
+                <div className="mb-4">
+                  <span className="text-xs font-bold uppercase tracking-wider text-[#9fe870]">
+                    Powered by Clerk Billing
+                  </span>
+                </div>
+                <h3 className="text-2xl font-black text-white">Pro Guardian</h3>
+                <div className="mt-2 mb-6 flex items-baseline gap-1">
+                  <span className="text-4xl font-black text-white">$10</span>
+                  <span className="text-xs font-semibold text-[#9fe870]">/ month</span>
+                </div>
+
+                <p className="text-xs text-[#e8ebe6] mb-6">
+                  Unlimited intelligence, deep scam forensics, full financial ledger history, and instant data export.
+                </p>
+
+                <ul className="space-y-3 mb-8 text-xs text-[#e8ebe6]">
+                  <li className="flex items-center gap-2.5">
+                    <Check className="w-4 h-4 text-[#9fe870] shrink-0 stroke-[3]" />
+                    <span className="font-semibold">Unlimited AI notification processing</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <Check className="w-4 h-4 text-[#9fe870] shrink-0 stroke-[3]" />
+                    <span className="font-semibold">Unlimited transaction ledger history & search</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <Check className="w-4 h-4 text-[#9fe870] shrink-0 stroke-[3]" />
+                    <span className="font-semibold">Deep Phishing Cues & Scam Radar heuristics</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <Check className="w-4 h-4 text-[#9fe870] shrink-0 stroke-[3]" />
+                    <span className="font-semibold">1-Click CSV & JSON transaction data export</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <Check className="w-4 h-4 text-[#9fe870] shrink-0 stroke-[3]" />
+                    <span className="font-semibold">Power bulk categorization & mass cleanup</span>
+                  </li>
+                  <li className="flex items-center gap-2.5">
+                    <Check className="w-4 h-4 text-[#9fe870] shrink-0 stroke-[3]" />
+                    <span className="font-semibold">Real-time SSE live security guardian</span>
+                  </li>
+                </ul>
+              </div>
+
+              <Link
+                href="/dashboard"
+                className="w-full py-3.5 rounded-2xl bg-[#9fe870] hover:bg-[#8ed662] text-[#163300] font-black text-center text-xs shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+              >
+                <Sparkles className="w-4 h-4 text-[#163300]" />
+                <span>Get Pro Guardian ($10/mo)</span>
+                <ArrowRight className="w-4 h-4 text-[#163300]" />
+              </Link>
+            </div>
+          </div>
+
+          <div className="mt-12 text-center text-xs text-[#868685]">
+            <p>
+              Protected by Clerk Billing and Stripe with 256-bit SSL encryption. Cancel anytime with 1 click.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* 8. COMPREHENSIVE FOOTER (Wise aesthetic) */}
+      <footer className="bg-[#163300] text-white pt-16 pb-12 border-t border-[#054d28]">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-8 mb-12">
+            {/* Brand Column */}
+            <div className="col-span-2 space-y-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-[#9fe870] flex items-center justify-center text-[#163300]">
+                  <Shield className="w-4 h-4 text-[#163300]" />
+                </div>
+                <span className="text-xl font-black text-white tracking-tight">
+                  Notif<span className="text-[#9fe870]">Ai</span>
+                </span>
+              </div>
+              <p className="text-xs text-[#868685] leading-relaxed max-w-sm">
+                Next-generation financial intelligence and fraud prevention engineered for Android. Zero-knowledge OTP stripping, AI expense categorization, and full user data sovereignty.
+              </p>
+              <div className="text-[11px] text-[#9fe870] font-mono">
+                Google Play Policy Compliant Platform
+              </div>
+            </div>
+
+            {/* Product */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-black uppercase tracking-wider text-[#9fe870]">Product</h4>
+              <ul className="space-y-2 text-xs text-[#e8ebe6]">
+                <li><Link href="/dashboard" className="hover:text-[#9fe870]">Web Console</Link></li>
+                <li><a href="#download" className="hover:text-[#9fe870]">Android App (APK)</a></li>
+                <li><a href="#features" className="hover:text-[#9fe870]">Core Features</a></li>
+                <li><a href="#demo" className="hover:text-[#9fe870]">Interactive Demo</a></li>
+              </ul>
+            </div>
+
+            {/* Legal & Google Play */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-black uppercase tracking-wider text-[#9fe870]">Google Play & Legal</h4>
+              <ul className="space-y-2 text-xs text-[#e8ebe6]">
+                <li><Link href="/privacy" className="hover:text-[#9fe870] font-semibold">Privacy Policy</Link></li>
+                <li><Link href="/terms" className="hover:text-[#9fe870]">Terms of Service</Link></li>
+                <li><Link href="/delete-account" className="hover:text-[#9fe870] font-bold text-[#9fe870]">Delete Account URL</Link></li>
+                <li><Link href="/security" className="hover:text-[#9fe870]">Data Safety Declarations</Link></li>
+              </ul>
+            </div>
+
+            {/* Support */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-black uppercase tracking-wider text-[#9fe870]">Support</h4>
+              <ul className="space-y-2 text-xs text-[#e8ebe6]">
+                <li><Link href="/support" className="hover:text-[#9fe870]">Help Center & FAQs</Link></li>
+                <li><a href="mailto:support@notifai.app" className="hover:text-[#9fe870]">Contact Support</a></li>
+                <li><a href="mailto:privacy@notifai.app" className="hover:text-[#9fe870]">Privacy Inquiries</a></li>
+                <li><Link href="/auth/mobile" className="hover:text-[#9fe870]">Mobile Pairing Bridge</Link></li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Bottom Bar */}
+          <div className="pt-8 border-t border-[#054d28] flex flex-col sm:flex-row items-center justify-between text-xs text-[#868685] gap-4">
+            <p>© 2026 NotifAi. All rights reserved.</p>
+            <p className="text-[11px]">
+              NotifAi is an independent financial software utility. Not affiliated with or endorsed by any specific commercial bank.
+            </p>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

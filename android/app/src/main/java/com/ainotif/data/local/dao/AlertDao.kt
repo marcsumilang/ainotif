@@ -13,7 +13,13 @@ interface AlertDao {
     fun getActiveAlertsFlow(): Flow<List<AlertEntity>>
 
     @Query("SELECT * FROM suspicious_alerts ORDER BY timestamp DESC")
+    fun getAllAlertsFlow(): Flow<List<AlertEntity>>
+
+    @Query("SELECT * FROM suspicious_alerts ORDER BY timestamp DESC")
     suspend fun getAllAlerts(): List<AlertEntity>
+
+    @Query("UPDATE suspicious_alerts SET isDismissed = 1 WHERE timestamp < :cutoffTimestamp AND isDismissed = 0")
+    suspend fun autoDismissOlderThan(cutoffTimestamp: Long): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAlert(alert: AlertEntity)

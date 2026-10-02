@@ -194,6 +194,8 @@ export async function ensureUser(id: string, email?: string, displayName?: strin
           id,
           email: email || `${id}@example.com`,
           displayName: displayName || "User",
+          plan: "free",
+          notificationCount: 0,
           createdAt: nowTime,
           updatedAt: nowTime,
         })
@@ -210,6 +212,8 @@ export async function ensureUser(id: string, email?: string, displayName?: strin
       id,
       email: email || `${id}@example.com`,
       displayName: displayName || "AiNotif User",
+      plan: "free",
+      notificationCount: 0,
       createdAt: nowTime,
       updatedAt: nowTime,
     };
@@ -217,6 +221,53 @@ export async function ensureUser(id: string, email?: string, displayName?: strin
   }
   return user;
 }
+
+export async function getUserPlan(userId: string): Promise<{ plan: "free" | "pro"; notificationCount: number }> {
+  const user = await ensureUser(userId);
+  return {
+    plan: (user.plan as "free" | "pro") || "free",
+    notificationCount: user.notificationCount || 0,
+  };
+}
+
+export async function setUserPlan(userId: string, plan: "free" | "pro"): Promise<void> {
+  const user = await ensureUser(userId);
+  user.plan = plan;
+  user.updatedAt = new Date();
+
+  const drizzleDb = getDb();
+  if (drizzleDb) {
+    try {
+      await drizzleDb
+        .update(schema.users)
+        .set({ plan, updatedAt: new Date() })
+        .where(eq(schema.users.id, userId));
+    } catch (err) {
+      console.warn("Failed to update user plan in DB:", err);
+    }
+  }
+}
+
+export async function incrementNotificationCount(userId: string): Promise<number> {
+  const user = await ensureUser(userId);
+  user.notificationCount = (user.notificationCount || 0) + 1;
+  user.updatedAt = new Date();
+
+  const drizzleDb = getDb();
+  if (drizzleDb) {
+    try {
+      await drizzleDb
+        .update(schema.users)
+        .set({ notificationCount: user.notificationCount, updatedAt: new Date() })
+        .where(eq(schema.users.id, userId));
+    } catch (err) {
+      console.warn("Failed to increment notification count in DB:", err);
+    }
+  }
+
+  return user.notificationCount;
+}
+
 
 export async function saveTransaction(data: {
   userId: string;
@@ -485,3 +536,33 @@ export async function getStats(userId: string) {
     avgRiskScore,
   };
 }
+
+export async function deleteUserData(userId: string): Promise<{ deletedTransactions: number; deletedAlerts: number; success: boolean }> {
+  let deletedTransactions = 0;
+  let deletedAlerts = 0;
+
+  const drizzleDb = getDb();
+  if (drizzleDb) {
+    try {
+      await drizzleDb.delete(schema.transactions).where(eq(schema.transactions.userId, userId));
+      await drizzleDb.delete(schema.suspiciousAlerts).where(eq(schema.suspiciousAlerts.userId, userId));
+      await drizzleDb.delete(schema.users).where(eq(schema.users.id, userId));
+    } catch (err) {
+      console.error("Failed to delete user records from Neon DB:", err);
+    }
+  }
+
+  // Clear from memoryStore
+  const initialTxCount = memoryStore.transactions.length;
+  memoryStore.transactions = memoryStore.transactions.filter((t) => t.userId !== userId);
+  deletedTransactions = initialTxCount - memoryStore.transactions.length;
+
+  const initialAlertCount = memoryStore.alerts.length;
+  memoryStore.alerts = memoryStore.alerts.filter((a) => a.userId !== userId);
+  deletedAlerts = initialAlertCount - memoryStore.alerts.length;
+
+  memoryStore.users.delete(userId);
+
+  return { deletedTransactions, deletedAlerts, success: true };
+}
+

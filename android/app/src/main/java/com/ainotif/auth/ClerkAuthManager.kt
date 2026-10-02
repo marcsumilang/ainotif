@@ -66,13 +66,36 @@ class ClerkAuthManager(context: Context) {
         _userState.value = UserState.SignedOut
     }
 
+    fun isSignedIn(): Boolean {
+        return _userState.value is UserState.SignedIn
+    }
+
+    fun getEmail(): String {
+        return when (val state = _userState.value) {
+            is UserState.SignedIn -> state.email
+            else -> ""
+        }
+    }
+
     /**
-     * Launches Clerk OAuth sign-in flow via Chrome Custom Tabs
+     * Launches Clerk OAuth sign-in flow via Chrome Custom Tabs (or system browser fallback)
      */
-    fun launchClerkSignIn(context: Context, clerkSignInUrl: String) {
-        val customTabsIntent = CustomTabsIntent.Builder()
-            .setShowTitle(true)
-            .build()
-        customTabsIntent.launchUrl(context, Uri.parse(clerkSignInUrl))
+    fun launchClerkSignIn(context: Context, webBaseUrl: String) {
+        val cleanBase = webBaseUrl.trim().trimEnd('/')
+        val authUrl = if (cleanBase.endsWith("/auth/mobile")) cleanBase else "$cleanBase/auth/mobile"
+        try {
+            val customTabsIntent = CustomTabsIntent.Builder()
+                .setShowTitle(true)
+                .build()
+            customTabsIntent.launchUrl(context, Uri.parse(authUrl))
+        } catch (_: Exception) {
+            try {
+                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(authUrl))
+                browserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(browserIntent)
+            } catch (_: Exception) {
+                // Ignore if no browser available
+            }
+        }
     }
 }

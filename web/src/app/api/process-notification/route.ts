@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { classifyNotification } from "@/lib/classifier";
-import { saveTransaction, saveAlert } from "@/lib/db";
+import { saveTransaction, saveAlert, getUserPlan, incrementNotificationCount } from "@/lib/db";
 import { eventBus } from "@/lib/events";
+import { getAuthenticatedUser } from "@/lib/auth";
 
 const ProcessNotificationSchema = z.object({
   text: z.string().min(1, "Notification text is required"),
@@ -13,6 +14,11 @@ const ProcessNotificationSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const auth = await getAuthenticatedUser(req);
+  if (!auth) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const body = await req.json();
     const parseResult = ProcessNotificationSchema.safeParse(body);
@@ -21,8 +27,27 @@ export async function POST(req: NextRequest) {
     }
 
     const { text, title, packageName, timestamp, userId } = parseResult.data;
-    const finalUserId = userId || req.headers.get("x-user-id") || "user_demo_dev";
+    const finalUserId = userId || auth.userId;
     const postTime = timestamp ? new Date(timestamp) : new Date();
+
+    // Check Plan & Quota limits
+    const userPlanInfo = await getUserPlan(finalUserId);
+    const isPro = userPlanInfo.plan === "pro";
+    const maxFree = 20;
+
+    if (!isPro && userPlanInfo.notificationCount >= maxFree) {
+      return NextResponse.json(
+        {
+          error: "PLAN_LIMIT_REACHED",
+          message: `Free plan limit of ${maxFree} notifications reached. Upgrade to Pro Guardian ($10/month) for unlimited real-time AI processing.`,
+          plan: "free",
+          used: userPlanInfo.notificationCount,
+          limit: maxFree,
+          upgradeRequired: true,
+        },
+        { status: 403 }
+      );
+    }
 
     const analysis = await classifyNotification({
       text,
@@ -30,6 +55,9 @@ export async function POST(req: NextRequest) {
       packageName,
       timestamp,
     });
+
+    // Increment notification usage counter
+    const currentCount = await incrementNotificationCount(finalUserId);
 
     let savedRecordId: string | null = null;
 

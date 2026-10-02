@@ -23,8 +23,12 @@ export async function clerkAuthMiddleware(c: Context, next: Next) {
 
   // Development / Mock fallback mode
   if (isDevMock) {
-    if (token && token.startsWith("mock_user_")) {
-      const mockId = token.replace("mock_", "");
+    if (token && (token.startsWith("mock_") || token.startsWith("user_"))) {
+      const mockId = token.startsWith("mock_user_")
+        ? token.replace("mock_", "")
+        : token.startsWith("mock_")
+        ? "user_demo_dev"
+        : token;
       c.set("auth", {
         userId: mockId,
         email: `${mockId}@example.com`,
@@ -71,6 +75,15 @@ export async function clerkAuthMiddleware(c: Context, next: Next) {
 
     return await next();
   } catch (err: any) {
+    if (isDevMock) {
+      console.warn("Clerk token verification failed in dev mock mode; falling back to demo session:", err?.message || err);
+      c.set("auth", {
+        userId: "user_demo_dev",
+        email: "demo@ainotif.local",
+        isMock: true,
+      });
+      return await next();
+    }
     console.error("Clerk token verification failed:", err?.message || err);
     return c.json({ error: "Unauthorized: Token verification failed", details: err?.message }, 401);
   }

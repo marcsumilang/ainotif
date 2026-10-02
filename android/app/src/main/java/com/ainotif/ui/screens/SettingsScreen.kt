@@ -67,6 +67,10 @@ fun SettingsScreen(
     val scamSensitivity by prefs.scamSensitivity.collectAsState()
     val isOfflineOnly by prefs.isOfflineOnly.collectAsState()
     val isHighPriorityPush by prefs.isHighPriorityPushEnabled.collectAsState()
+    val isAutoHideMaliciousNotif by prefs.isAutoHideMaliciousNotifEnabled.collectAsState()
+    val autoHideWarningNotifSeconds by prefs.autoHideWarningNotifSeconds.collectAsState()
+    val isAutoHideThreatContent by prefs.isAutoHideThreatMessageContent.collectAsState()
+    val autoDismissThreatHours by prefs.autoDismissThreatHours.collectAsState()
     val isDevModeUnlocked by prefs.isDeveloperModeUnlocked.collectAsState()
     val lastSyncTime by prefs.lastSyncTime.collectAsState()
     val backendUrl by prefs.backendUrl.collectAsState()
@@ -118,6 +122,12 @@ fun SettingsScreen(
     var simOutcomeMessage by remember { mutableStateOf<String?>(null) }
     var isSimulating by remember { mutableStateOf(false) }
     var customUrlInput by remember(backendUrl) { mutableStateOf(backendUrl) }
+    var showManualTokenDialog by remember { mutableStateOf(false) }
+    var manualInputText by remember { mutableStateOf("") }
+    var manualUserIdInput by remember { mutableStateOf("") }
+    var manualEmailInput by remember { mutableStateOf("") }
+    var webAuthUrlInput by remember { mutableStateOf("http://10.0.2.2:3001") }
+    var isSyncingNow by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -366,7 +376,7 @@ fun SettingsScreen(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        // Privacy shield status banner (Wise Linen Mist)
+                        // Privacy shield status banner
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
@@ -513,6 +523,141 @@ fun SettingsScreen(
                                 checked = isHighPriorityPush,
                                 onCheckedChange = { prefs.setHighPriorityPushEnabled(it) }
                             )
+                        }
+                    }
+                }
+            }
+
+            // ==========================================
+            // AUTO-HIDE THREATS & PRIVACY DEFENSE
+            // ==========================================
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(com.ainotif.ui.theme.WiseLimeVoltage.copy(alpha = 0.35f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.VisibilityOff,
+                                    contentDescription = null,
+                                    tint = com.ainotif.ui.theme.WiseForestInk,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("Auto-Hide & Privacy Defense", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                Text(
+                                    "Shield notification tray and mask deceptive content",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // 1. Auto-hide incoming malicious notification from shade
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Auto-Hide Scam Notifications", fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "Instantly dismiss phishing notifications from the system notification bar so you won't tap malicious links",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
+                            Switch(
+                                checked = isAutoHideMaliciousNotif,
+                                onCheckedChange = { prefs.setAutoHideMaliciousNotifEnabled(it) }
+                            )
+                        }
+
+                        Divider(modifier = Modifier.padding(vertical = 12.dp))
+
+                        // 2. Auto-hide/mask threat message text in app
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Auto-Mask Threat Messages", fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "Conceal deceptive message body in the Radar screen behind a tap-to-reveal toggle",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
+                            Switch(
+                                checked = isAutoHideThreatContent,
+                                onCheckedChange = { prefs.setAutoHideThreatMessageContent(it) }
+                            )
+                        }
+
+                        Divider(modifier = Modifier.padding(vertical = 12.dp))
+
+                        // 3. Auto-dismiss warning notification delay
+                        Text("Auto-Clear Warning Notification", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Automatically remove AiNotif's warning alert from notification shade after:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf(0 to "Never", 15 to "15s", 30 to "30s", 60 to "60s").forEach { (sec, label) ->
+                                val isSelected = autoHideWarningNotifSeconds == sec
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { prefs.setAutoHideWarningNotifSeconds(sec) },
+                                    label = { Text(label, fontSize = 12.sp) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+
+                        Divider(modifier = Modifier.padding(vertical = 12.dp))
+
+                        // 4. Auto-dismiss / archive threat logs retention
+                        Text("Auto-Expire Threat Radar", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Automatically archive intercepted threat records from the active radar after:",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf(0 to "Never", 24 to "24 Hours", 168 to "7 Days").forEach { (hrs, label) ->
+                                val isSelected = autoDismissThreatHours == hrs
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = { prefs.setAutoDismissThreatHours(hrs) },
+                                    label = { Text(label, fontSize = 12.sp) },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
                         }
                     }
                 }
@@ -690,7 +835,7 @@ fun SettingsScreen(
 
                         HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
-                        // Data Export Buttons (Wise Pill Buttons)
+                        // Data Export Buttons (Pill Buttons)
                         Text("Export Transaction History", fontWeight = FontWeight.SemiBold)
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(
@@ -749,7 +894,7 @@ fun SettingsScreen(
             // 5. ACCOUNT & LEGAL
             // ==========================================
             item {
-                SectionHeader("Account & Compliance")
+                SectionHeader("Account & Cloud Sync")
             }
 
             item {
@@ -759,65 +904,206 @@ fun SettingsScreen(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        // User Profile Row
+                        val isSignedIn = authState is ClerkAuthManager.UserState.SignedIn
+                        val userEmail = when (val state = authState) {
+                            is ClerkAuthManager.UserState.SignedIn -> state.email.ifBlank { state.userId }
+                            is ClerkAuthManager.UserState.DemoUser -> state.userId
+                            ClerkAuthManager.UserState.SignedOut -> "Signed Out"
+                        }
+                        val authLabel = when (authState) {
+                            is ClerkAuthManager.UserState.SignedIn -> "Clerk Authenticated • Neon DB Synced"
+                            is ClerkAuthManager.UserState.DemoUser -> "Demo Account (Local Only)"
+                            ClerkAuthManager.UserState.SignedOut -> "No Active Session"
+                        }
+
+                        // User Profile Header
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            val (userEmail, authLabel, isSignedIn) = when (val state = authState) {
-                                is ClerkAuthManager.UserState.SignedIn -> Triple(state.email.ifBlank { state.userId }, "Clerk Authenticated", true)
-                                is ClerkAuthManager.UserState.DemoUser -> Triple(state.userId, "Demo Account", false)
-                                ClerkAuthManager.UserState.SignedOut -> Triple("Signed Out", "No Session", false)
+                            Box(
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isSignedIn) com.ainotif.ui.theme.WiseForestInk else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    if (isSignedIn) Icons.Default.Shield else Icons.Default.Person,
+                                    contentDescription = null,
+                                    tint = if (isSignedIn) com.ainotif.ui.theme.WiseLimeVoltage else MaterialTheme.colorScheme.primary
+                                )
                             }
-
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(42.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                }
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = userEmail,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp
+                                )
+                                Text(
+                                    text = authLabel,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isSignedIn) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                                if (lastSyncTime > 0L) {
                                     Text(
-                                        text = userEmail,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = authLabel,
+                                        text = "Last sync: ${SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(lastSyncTime))}",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = if (isSignedIn) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
                                     )
-                                }
-                            }
-
-                            if (isSignedIn) {
-                                OutlinedButton(
-                                    onClick = { authManager.signOut() },
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text("Sign Out")
                                 }
                             }
                         }
 
-                        Divider(modifier = Modifier.padding(vertical = 12.dp))
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        if (isSignedIn) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        coroutineScope.launch {
+                                            isSyncingNow = true
+                                            val res = repository.syncWithBackend()
+                                            isSyncingNow = false
+                                            Toast.makeText(
+                                                context,
+                                                if (res.isSuccess) "Data synchronized with Cloud" else "Sync failed: ${res.exceptionOrNull()?.message}",
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    },
+                                    enabled = !isSyncingNow,
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    if (isSyncingNow) {
+                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                                    } else {
+                                        Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(if (isSyncingNow) "Syncing..." else "Sync Now")
+                                }
+
+                                OutlinedButton(
+                                    onClick = { authManager.signOut() },
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text("Sign Out")
+                                }
+                            }
+                        } else {
+                            Text(
+                                text = "Sign in with Clerk to automatically sync banking notifications and fraud alerts between your phone and the Web Command Center.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        authManager.launchClerkSignIn(context, webAuthUrlInput)
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = com.ainotif.ui.theme.WiseForestInk,
+                                        contentColor = com.ainotif.ui.theme.WiseLimeVoltage
+                                    )
+                                ) {
+                                    Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Sign In with Clerk", fontWeight = FontWeight.Bold)
+                                }
+
+                                OutlinedButton(
+                                    onClick = { showManualTokenDialog = true },
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(Icons.Default.QrCode, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Pair")
+                                }
+                            }
+
+                            if (authState is ClerkAuthManager.UserState.SignedOut) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                TextButton(
+                                    onClick = { authManager.setDemoMode() },
+                                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                                ) {
+                                    Text("Continue with Demo Account")
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
                         // Privacy Policy
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { showPrivacyPolicyDialog = true }
+                                .clickable {
+                                    val url = if (backendUrl.isNotBlank()) "$backendUrl/privacy" else "https://notifai.app/privacy"
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                    context.startActivity(intent)
+                                }
                                 .padding(vertical = 4.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Privacy Policy & Play Compliance", fontWeight = FontWeight.SemiBold)
+                            Text("Privacy Policy (Google Play)", fontWeight = FontWeight.SemiBold)
                             Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+
+                        // Terms of Service
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val url = if (backendUrl.isNotBlank()) "$backendUrl/terms" else "https://notifai.app/terms"
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                    context.startActivity(intent)
+                                }
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Terms of Service", fontWeight = FontWeight.SemiBold)
+                            Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+
+                        // Google Play Mandatory Account Deletion Link
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    val url = if (backendUrl.isNotBlank()) "$backendUrl/delete-account" else "https://notifai.app/delete-account"
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                    context.startActivity(intent)
+                                }
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.DeleteOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Delete Account & Cloud Data", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.error)
+                            }
+                            Icon(Icons.Default.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
                         }
 
                         Divider(modifier = Modifier.padding(vertical = 12.dp))
@@ -1107,20 +1393,30 @@ fun SettingsScreen(
     if (showPrivacyPolicyDialog) {
         AlertDialog(
             onDismissRequest = { showPrivacyPolicyDialog = false },
-            title = { Text("AiNotif Privacy Policy") },
+            title = { Text("NotifAi Privacy Policy") },
             text = {
                 Text(
-                    "AiNotif is committed to absolute financial privacy.\n\n" +
+                    "NotifAi is committed to absolute financial privacy.\n\n" +
                     "1. On-Device Redaction: All authentication codes (OTPs), 2FA tokens, and passwords are detected locally on your device and purged immediately.\n\n" +
                     "2. Data Sovereignty: You can toggle Offline-Only Mode at any time to prevent any records from leaving this device.\n\n" +
-                    "3. Deletion Rights: You can export your full transaction records or wipe all data with a single tap.",
+                    "3. Deletion Rights: You can export your full transaction records or wipe all data with a single tap, or use our public web deletion tool at /delete-account.",
                     fontSize = 13.sp,
                     lineHeight = 18.sp
                 )
             },
             confirmButton = {
-                Button(onClick = { showPrivacyPolicyDialog = false }) {
-                    Text("Close")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = {
+                        val url = if (backendUrl.isNotBlank()) "$backendUrl/privacy" else "https://notifai.app/privacy"
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                        context.startActivity(intent)
+                        showPrivacyPolicyDialog = false
+                    }) {
+                        Text("Web Policy")
+                    }
+                    Button(onClick = { showPrivacyPolicyDialog = false }) {
+                        Text("Close")
+                    }
                 }
             }
         )
@@ -1337,6 +1633,94 @@ fun SettingsScreen(
             confirmButton = {
                 Button(onClick = { smsImportSummary = null }) {
                     Text("Done")
+                }
+            }
+        )
+    }
+
+    if (showManualTokenDialog) {
+        AlertDialog(
+            onDismissRequest = { showManualTokenDialog = false },
+            title = { Text("Pair with Clerk Account", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "Paste the deep link or pairing token from your Web Command Center (click 'Sync Mobile' on the web dashboard):",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                    OutlinedTextField(
+                        value = manualInputText,
+                        onValueChange = { manualInputText = it },
+                        label = { Text("Deep Link or Token") },
+                        placeholder = { Text("ainotif://oauth/callback?token=... or token") },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 3
+                    )
+                    OutlinedTextField(
+                        value = manualUserIdInput,
+                        onValueChange = { manualUserIdInput = it },
+                        label = { Text("Clerk User ID (optional if link)") },
+                        placeholder = { Text("user_2...") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = manualEmailInput,
+                        onValueChange = { manualEmailInput = it },
+                        label = { Text("Email (optional)") },
+                        placeholder = { Text("user@example.com") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = webAuthUrlInput,
+                        onValueChange = { webAuthUrlInput = it },
+                        label = { Text("Web Auth Base URL") },
+                        placeholder = { Text("http://10.0.2.2:3001") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val input = manualInputText.trim()
+                        if (input.startsWith("ainotif://")) {
+                            try {
+                                val uri = Uri.parse(input)
+                                val token = uri.getQueryParameter("token") ?: ""
+                                val userId = uri.getQueryParameter("userId") ?: ""
+                                val email = uri.getQueryParameter("email") ?: ""
+                                if (token.isNotBlank() && userId.isNotBlank()) {
+                                    authManager.setSession(userId, email, token)
+                                    coroutineScope.launch {
+                                        repository.syncWithBackend()
+                                        Toast.makeText(context, "Connected to Clerk ($userId) & Synced!", Toast.LENGTH_SHORT).show()
+                                    }
+                                    showManualTokenDialog = false
+                                    return@Button
+                                }
+                            } catch (_: Exception) {}
+                        }
+                        val finalToken = input.ifBlank { "mock_clerk_token" }
+                        val finalUserId = manualUserIdInput.trim().ifBlank { "user_demo_mobile" }
+                        val finalEmail = manualEmailInput.trim().ifBlank { "demo@ainotif.local" }
+                        authManager.setSession(finalUserId, finalEmail, finalToken)
+                        coroutineScope.launch {
+                            repository.syncWithBackend()
+                            Toast.makeText(context, "Connected to Clerk ($finalUserId) & Synced!", Toast.LENGTH_SHORT).show()
+                        }
+                        showManualTokenDialog = false
+                    }
+                ) {
+                    Text("Pair & Sync")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showManualTokenDialog = false }) {
+                    Text("Cancel")
                 }
             }
         )

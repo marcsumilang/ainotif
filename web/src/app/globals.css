@@ -29,7 +29,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Custom sleek Wise scrollbars */
+/* Custom sleek scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -48,32 +48,32 @@ body {
   background: #aab0a4;
 }
 
-/* Wise Card Utilities */
-.wise-card {
+/* Card Utilities */
+.an-card {
   background: #ffffff;
   border: 1px solid #e8ebe6;
   border-radius: 16px;
   box-shadow: 0 1px 3px rgba(22, 51, 0, 0.04);
 }
 
-.wise-card-interactive {
+.an-card-interactive {
   transition: all 0.15s ease-in-out;
 }
 
-.wise-card-interactive:hover {
+.an-card-interactive:hover {
   border-color: #163300;
   box-shadow: 0 4px 16px rgba(22, 51, 0, 0.08);
 }
 
-/* Wise Inverted Dark Hero */
-.wise-hero-dark {
+/* Inverted Dark Hero */
+.an-hero-dark {
   background: #163300;
   color: #ffffff;
   border-radius: 24px;
 }
 
-/* Wise Pill Button Classes */
-.wise-btn-primary {
+/* Pill Button Classes */
+.an-btn-primary {
   background-color: #9fe870;
   color: #163300;
   font-weight: 600;
@@ -85,12 +85,12 @@ body {
   justify-content: center;
 }
 
-.wise-btn-primary:hover {
+.an-btn-primary:hover {
   background-color: #8edc5e;
   transform: translateY(-1px);
 }
 
-.wise-btn-dark {
+.an-btn-dark {
   background-color: #163300;
   color: #ffffff;
   font-weight: 600;
@@ -102,11 +102,11 @@ body {
   justify-content: center;
 }
 
-.wise-btn-dark:hover {
+.an-btn-dark:hover {
   background-color: #234f03;
 }
 
-.wise-btn-secondary {
+.an-btn-secondary {
   background-color: #ffffff;
   color: #163300;
   font-weight: 600;
@@ -119,7 +119,7 @@ body {
   justify-content: center;
 }
 
-.wise-btn-secondary:hover {
+.an-btn-secondary:hover {
   background-color: #f7f9f6;
   border-color: #163300;
 }

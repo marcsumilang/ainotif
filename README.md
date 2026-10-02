@@ -1,6 +1,6 @@
-# AiNotif 🛡️📱
+# NotifAi 🛡️📱
 
-**AiNotif** is a modern, privacy-first Android application and typesafe AI backend service that intercepts banking, SMS, and financial notifications, instantly drops sensitive OTPs/credentials on-device, forwards financial updates to a structured AI engine (OpenRouter Free Models / Zod), detects phishing/scam attempts, categorizes expenses, and syncs data to an offline-first Room database with Clerk user authentication and Neon PostgreSQL storage.
+**NotifAi** is a modern, privacy-first Android application, Wise-inspired web platform, and typesafe AI service that intercepts banking, SMS, and financial notifications, instantly drops sensitive OTPs/credentials on-device, forwards financial updates to a structured AI engine (OpenRouter Free Models / Zod), detects phishing/scam attempts, categorizes expenses, and syncs data to an offline-first Room database with Clerk user authentication and Neon PostgreSQL storage. Fully compliant with Google Play Developer Policies and Account Deletion mandates.
 
 ---
 
@@ -183,4 +183,34 @@ cd android
 
 4. **Zero-Configuration Offline / Demo Mode**:
    - Web dashboard, backend, and mobile app include seamless mock/demo fallbacks, so developers can test the full end-to-end pipeline before configuring live Neon DB or Clerk keys.
+
+---
+
+## Google Play Developer Policy Compliance
+
+### 1. Mandatory Public Account Deletion (`/delete-account`)
+Google Play strictly requires that any app offering user account creation must provide a public web resource where users can initiate account and data deletion without needing the app installed:
+- **Web URL**: `https://<your-domain>/delete-account` (or `/delete-account` locally)
+- **Automated Purge**: Users can log in with Clerk to delete all cloud data with 1 click, or submit their registered email via the guest request form.
+- **Backend API**: `POST /api/account/delete` permanently wipes all transaction records, suspicious alerts, and user profiles from Neon PostgreSQL and Clerk.
+- **In-App Action**: Users can also tap **"Delete Account & Cloud Data"** inside Android Settings to wipe their cloud account, and **"Wipe All Local Data"** to clear the offline Room database.
+
+### 2. Google Play Data Safety Form Questionnaire
+When filling out the Google Play Console Data Safety questionnaire, use these declarations:
+- **Data Collected**:
+  - *Financial Info*: Other financial info (extracted amounts, merchant names, categories for expense tracking).
+  - *Messages*: Other in-app messages/notification texts (used strictly for transaction extraction and fraud prevention).
+  - *Personal Info*: Email address & User ID (for authentication via Clerk).
+- **Data Sharing**: No user financial data is sold, rented, or shared with third-party advertisers.
+- **Security Practices**:
+  - *Data Encrypted in Transit*: **Yes** (TLS 1.3 / HTTPS).
+  - *Account Deletion Mechanism Provided*: **Yes** (`https://<your-domain>/delete-account`).
+  - *Sensitive OTPs / Passwords*: Discarded on-device before any transmission.
+
+### 3. Public Legal Pages
+- **Privacy Policy**: `/privacy`
+- **Terms of Service**: `/terms`
+- **Help & Support Desk**: `/support`
+- **Security & Data Safety Whitepaper**: `/security`
+
 
