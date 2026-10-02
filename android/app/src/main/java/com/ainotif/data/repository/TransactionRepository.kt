@@ -8,6 +8,7 @@ import com.ainotif.data.local.entity.AlertEntity
 import com.ainotif.data.local.entity.NotificationLogEntity
 import com.ainotif.data.local.entity.TransactionEntity
 import com.ainotif.data.remote.AiAnalysisResult
+import com.ainotif.data.remote.CategoryRuleDto
 import com.ainotif.data.remote.AiNotifApiClient
 import com.ainotif.data.remote.CreateTransactionDto
 import com.ainotif.data.remote.ProcessNotificationRequest
@@ -16,6 +17,7 @@ import com.ainotif.data.remote.UpdateTransactionDto
 import com.ainotif.service.FilterDecision
 import com.ainotif.service.HeuristicClassifier
 import com.ainotif.service.RegexFilter
+import com.ainotif.service.NotificationActionPolicy
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 
@@ -25,6 +27,7 @@ sealed class ProcessNotificationOutcome {
     data class InterceptedScam(val alert: AlertEntity, val aiResult: AiAnalysisResult) : ProcessNotificationOutcome()
     object Ignored : ProcessNotificationOutcome()
     data class Error(val message: String) : ProcessNotificationOutcome()
+    data class ReviewRequired(val reason: String) : ProcessNotificationOutcome()
 }
 
 class TransactionRepository(
@@ -75,7 +78,7 @@ class TransactionRepository(
             is FilterDecision.DropSecurityCode -> {
                 db.notificationLogDao().insertLog(
                     NotificationLogEntity(
-                        title = title,
+                        title = "[REDACTED SECURITY CODE/OTP]",
                         text = "[REDACTED SECURITY CODE/OTP]",
                         packageName = packageName,
                         decision = "DROPPED_OTP",
@@ -117,7 +120,8 @@ class TransactionRepository(
                     text = text.orEmpty(),
                     title = title,
                     packageName = packageName,
-                    timestamp = timestamp
+                    timestamp = timestamp,
+                    categoryRules = serverCategoryRules()
                 )
 
                 val result = apiClient.processNotification(request, token)
@@ -152,7 +156,7 @@ class TransactionRepository(
             is FilterDecision.DropSecurityCode -> {
                 db.notificationLogDao().insertLog(
                     NotificationLogEntity(
-                        title = title,
+                        title = "[REDACTED SECURITY CODE/OTP]",
                         text = "[REDACTED SECURITY CODE/OTP]",
                         packageName = packageName,
                         decision = "DROPPED_OTP",
@@ -183,7 +187,8 @@ class TransactionRepository(
                         text = text.orEmpty(),
                         title = title,
                         packageName = packageName,
-                        timestamp = timestamp
+                        timestamp = timestamp,
+                        categoryRules = serverCategoryRules()
                     )
 
                     val result = apiClient.processNotification(request, token)
@@ -221,7 +226,13 @@ class TransactionRepository(
     ): ProcessNotificationOutcome {
         val riskThreshold = preferencesManager.getEffectiveRiskThreshold()
 
-        if (analysis.classification == "SCAM_PHISHING" && analysis.riskScore >= riskThreshold) {
+        if (analysis.decision.requiresReview) {
+            db.notificationLogDao().insertLog(NotificationLogEntity(
+                title = title, text = text, packageName = packageName, decision = "REVIEW", timestamp = timestamp
+            ))
+        }
+
+        if (NotificationActionPolicy.canWarn(analysis) && analysis.riskScore >= riskThreshold) {
             val alert = AlertEntity(
                 id = savedRecordId ?: UUID.randomUUID().toString(),
                 rawNotification = "${title?.let { "$it: " }.orEmpty()}${text.orEmpty()}",
@@ -230,11 +241,11 @@ class TransactionRepository(
                 reason = analysis.scamReason ?: "Suspicious alert detected",
                 phishingCues = analysis.scamIndicators.joinToString("; "),
                 timestamp = timestamp,
-                isSynced = isSynced
+                isSynced = isSynced && savedRecordId != null
             )
             db.alertDao().insertAlert(alert)
             return ProcessNotificationOutcome.InterceptedScam(alert, analysis)
-        } else if (analysis.classification == "TRANSACTION" && analysis.transaction != null) {
+        } else if (NotificationActionPolicy.canSaveTransaction(analysis) && analysis.transaction != null) {
             // Apply user-defined custom categorization rules
             val finalCategory = categoryRulesManager.applyCustomRules(
                 analysis.transaction.merchant,
@@ -266,14 +277,20 @@ class TransactionRepository(
                 rawNotification = rawFormatted,
                 sourcePackage = packageName,
                 timestamp = timestamp,
-                isSynced = isSynced
+                isSynced = isSynced && savedRecordId != null
             )
             db.transactionDao().insertTransaction(tx)
             return ProcessNotificationOutcome.ParsedTransaction(tx, analysis)
         } else {
-            return ProcessNotificationOutcome.Ignored
+            return if (analysis.decision.requiresReview) ProcessNotificationOutcome.ReviewRequired(analysis.explanation)
+                else ProcessNotificationOutcome.Ignored
         }
     }
+
+    private fun serverCategoryRules(): List<CategoryRuleDto> = categoryRulesManager.getRules()
+        .entries.take(32).map { (keyword, category) ->
+            CategoryRuleDto(keyword.take(100), if (category == "Health & Fitness") "Health" else category)
+        }
 
     suspend fun updateTransaction(tx: TransactionEntity): Result<Unit> = runCatching {
         db.transactionDao().updateTransaction(tx)

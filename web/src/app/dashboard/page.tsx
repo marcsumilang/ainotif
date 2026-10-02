@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import NotificationReviewQueue from "@/components/NotificationReviewQueue";
 import {
   Shield,
   ShieldAlert,
@@ -940,6 +941,8 @@ export default function Dashboard() {
           </div>
         )}
 
+        <NotificationReviewQueue authToken={authToken} refreshKey={simLoading} />
+
         {/* ======================= OVERVIEW TAB ======================= */}
         {activeTab === "overview" && (
           <div className="space-y-8 animate-fadeIn">
@@ -1407,7 +1410,7 @@ export default function Dashboard() {
                     <option value="Transport & Travel" className="text-black">Transport & Travel</option>
                     <option value="Entertainment" className="text-black">Entertainment</option>
                     <option value="Bills & Utilities" className="text-black">Bills & Utilities</option>
-                    <option value="Health & Fitness" className="text-black">Health & Fitness</option>
+                    <option value="Health" className="text-black">Health</option>
                     <option value="Transfers" className="text-black">Transfers</option>
                     <option value="Income" className="text-black">Income</option>
                     <option value="General" className="text-black">General</option>

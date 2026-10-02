@@ -1,15 +1,27 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { useUser, useAuth, SignIn } from "@clerk/nextjs";
-import { Shield, CheckCircle2, ArrowRight, Smartphone, RefreshCw } from "lucide-react";
+import React, { useEffect, useState, Suspense } from "react";
+import { useUser, useAuth, SignIn, SignUp } from "@clerk/nextjs";
+import { useSearchParams } from "next/navigation";
+import { Shield, CheckCircle2, ArrowRight, Smartphone, RefreshCw, UserPlus, LogIn } from "lucide-react";
 
-export default function MobileAuthBridge() {
+function MobileAuthContent() {
   const { isLoaded, isSignedIn, user } = useUser();
   const { getToken } = useAuth();
+  const searchParams = useSearchParams();
+  const initialMode = searchParams.get("mode") === "signup" ? "signup" : "signin";
+  const [authMode, setAuthMode] = useState<"signin" | "signup">(initialMode);
   const [token, setToken] = useState<string | null>(null);
   const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
   const [isRedirecting, setIsRedirecting] = useState<boolean>(false);
+
+  // Sync mode with query parameter if it changes
+  useEffect(() => {
+    const modeParam = searchParams.get("mode");
+    if (modeParam === "signup" || modeParam === "signin") {
+      setAuthMode(modeParam);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     async function resolveToken() {
@@ -113,26 +125,90 @@ export default function MobileAuthBridge() {
         </div>
         <h1 className="text-2xl font-black text-[#163300] tracking-tight">NotifAi Cloud Sync</h1>
         <p className="text-xs text-[#6a6c6a] mt-1 max-w-xs">
-          Sign in to synchronize bank notifications, threat telemetry, and real-time expense insights with your Android device.
+          Sign in or register to synchronize bank notifications, threat telemetry, and real-time expense insights with your Android device.
         </p>
+
+        {/* Auth Mode Toggle */}
+        <div className="mt-4 flex items-center bg-[#e8ebe6] p-1 rounded-full text-xs font-bold">
+          <button
+            type="button"
+            onClick={() => setAuthMode("signin")}
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full transition-all ${
+              authMode === "signin"
+                ? "bg-[#163300] text-[#9fe870] shadow-sm"
+                : "text-[#454745] hover:text-[#163300]"
+            }`}
+          >
+            <LogIn className="w-3.5 h-3.5" />
+            <span>Sign In</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setAuthMode("signup")}
+            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full transition-all ${
+              authMode === "signup"
+                ? "bg-[#163300] text-[#9fe870] shadow-sm"
+                : "text-[#454745] hover:text-[#163300]"
+            }`}
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+            <span>Create Account</span>
+          </button>
+        </div>
       </div>
 
       <div className="w-full max-w-sm flex justify-center">
-        <SignIn
-          routing="hash"
-          forceRedirectUrl="/auth/mobile"
-          appearance={{
-            elements: {
-              card: "bg-white border border-[#e8ebe6] shadow-xl text-[#163300] rounded-3xl",
-              headerTitle: "text-[#163300] font-black",
-              headerSubtitle: "text-[#6a6c6a] text-xs",
-              formButtonPrimary: "bg-[#9fe870] hover:bg-[#8ed662] text-[#163300] font-bold text-sm rounded-full py-2.5 shadow-sm",
-              formFieldInput: "bg-[#f7f9f6] border-[#d4d8cf] text-[#163300] focus:border-[#163300] rounded-xl",
-              footerActionLink: "text-[#163300] font-bold hover:underline",
-            },
-          }}
-        />
+        {authMode === "signup" ? (
+          <SignUp
+            routing="hash"
+            signInUrl="/auth/mobile?mode=signin"
+            forceRedirectUrl="/auth/mobile"
+            appearance={{
+              elements: {
+                card: "bg-white border border-[#e8ebe6] shadow-xl text-[#163300] rounded-3xl",
+                headerTitle: "text-[#163300] font-black",
+                headerSubtitle: "text-[#6a6c6a] text-xs",
+                formButtonPrimary: "bg-[#9fe870] hover:bg-[#8ed662] text-[#163300] font-bold text-sm rounded-full py-2.5 shadow-sm",
+                formFieldInput: "bg-[#f7f9f6] border-[#d4d8cf] text-[#163300] focus:border-[#163300] rounded-xl",
+                footerActionLink: "text-[#163300] font-bold hover:underline",
+              },
+            }}
+          />
+        ) : (
+          <SignIn
+            routing="hash"
+            signUpUrl="/auth/mobile?mode=signup"
+            forceRedirectUrl="/auth/mobile"
+            appearance={{
+              elements: {
+                card: "bg-white border border-[#e8ebe6] shadow-xl text-[#163300] rounded-3xl",
+                headerTitle: "text-[#163300] font-black",
+                headerSubtitle: "text-[#6a6c6a] text-xs",
+                formButtonPrimary: "bg-[#9fe870] hover:bg-[#8ed662] text-[#163300] font-bold text-sm rounded-full py-2.5 shadow-sm",
+                formFieldInput: "bg-[#f7f9f6] border-[#d4d8cf] text-[#163300] focus:border-[#163300] rounded-xl",
+                footerActionLink: "text-[#163300] font-bold hover:underline",
+              },
+            }}
+          />
+        )}
       </div>
     </div>
+  );
+}
+
+export default function MobileAuthBridge() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#163300] flex items-center justify-center p-4">
+          <div className="flex flex-col items-center gap-3 text-white">
+            <RefreshCw className="w-8 h-8 text-[#9fe870] animate-spin" />
+            <p className="text-sm font-mono text-[#9fe870]">Securing NotifAi Authentication...</p>
+          </div>
+        </div>
+      }
+    >
+      <MobileAuthContent />
+    </Suspense>
   );
 }

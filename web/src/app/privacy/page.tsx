@@ -158,8 +158,8 @@ export default function PrivacyPolicyPage() {
                 Serverless PostgreSQL storage over SSL/TLS with strict user ID data isolation.
               </div>
               <div className="border border-[#e8ebe6] p-3 rounded-xl bg-[#f7f9f6]">
-                <strong className="text-[#163300] block mb-1">OpenRouter / AI</strong>
-                Zero-retention AI models for structured entity extraction and threat scoring.
+                <strong className="text-[#163300] block mb-1">TypeSafe Jev / AI</strong>
+                Typed transaction and threat judgments on notifications that pass credential filtering. Analysis results and uncertain messages are retained in your account for review.
               </div>
             </div>
           </section>

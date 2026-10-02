@@ -21,7 +21,7 @@ class CategoryRulesManager(context: Context) {
             "Transport & Travel",
             "Entertainment",
             "Bills & Utilities",
-            "Health & Fitness",
+            "Health",
             "Transfers",
             "Income",
             "General"
@@ -31,7 +31,9 @@ class CategoryRulesManager(context: Context) {
     fun getRules(): Map<String, String> {
         val raw = prefs.getString(KEY_RULES, null) ?: return emptyMap()
         return try {
-            json.decodeFromString<Map<String, String>>(raw)
+            json.decodeFromString<Map<String, String>>(raw).mapValues { (_, category) ->
+                if (category == "Health & Fitness") "Health" else category
+            }
         } catch (_: Exception) {
             emptyMap()
         }

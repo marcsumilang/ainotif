@@ -130,7 +130,7 @@ class AiNotificationListenerService : NotificationListenerService() {
                     Log.w(TAG, "🚨 Intercepted Scam (${outcome.alert.riskScore}% risk): ${outcome.alert.reason}")
                     
                     // Auto-hide the original malicious notification from the Android status bar/shade
-                    if (app.preferencesManager.isAutoHideMaliciousNotifEnabled.value) {
+                    if (app.preferencesManager.isAutoHideMaliciousNotifEnabled.value && NotificationActionPolicy.canHideNotification(outcome.aiResult)) {
                         try {
                             cancelNotification(sbn.key)
                             Log.i(TAG, "🛡️ Auto-hid malicious notification from system shade: ${sbn.key}")
@@ -145,6 +145,7 @@ class AiNotificationListenerService : NotificationListenerService() {
                     true
                 }
                 is ProcessNotificationOutcome.Ignored -> false
+                is ProcessNotificationOutcome.ReviewRequired -> false
                 is ProcessNotificationOutcome.Error -> {
                     Log.e(TAG, "Error processing notification: ${outcome.message}")
                     false

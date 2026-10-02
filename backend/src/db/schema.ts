@@ -1,4 +1,5 @@
-import { pgTable, uuid, varchar, doublePrecision, text, timestamp, boolean, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, doublePrecision, text, timestamp, boolean, integer, index, jsonb } from "drizzle-orm/pg-core";
+import type { ClassificationResult } from "../ai/classifier.js";
 
 export const users = pgTable("users", {
   id: varchar("id", { length: 255 }).primaryKey(), // Clerk User ID (e.g. user_2abc...)
@@ -44,6 +45,18 @@ export const suspiciousAlerts = pgTable("suspicious_alerts", {
 ]);
 
 export type User = typeof users.$inferSelect;
+export const notificationAnalyses = pgTable("notification_analyses", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: varchar("user_id", { length: 255 }).notNull().references(() => users.id, { onDelete: "cascade" }),
+  rawNotification: text("raw_notification").notNull(),
+  sourcePackage: varchar("source_package", { length: 255 }),
+  timestamp: timestamp("timestamp").notNull(),
+  requiresReview: boolean("requires_review").notNull().default(false),
+  analysis: jsonb("analysis").$type<ClassificationResult>().notNull(),
+  context: jsonb("context").$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [index("notification_analyses_user_review_idx").on(table.userId, table.requiresReview)]);
+export type NotificationAnalysis = typeof notificationAnalyses.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 
 export type Transaction = typeof transactions.$inferSelect;

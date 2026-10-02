@@ -31,7 +31,7 @@ class SmsInboxImporterTest {
     }
 
     @Test
-    fun testSmsFinancialTransactionsExtraction() {
+    fun testSmsFinancialTransactionsRequireReviewOffline() {
         val txSmsList = listOf(
             MockSms("CHASE", "You spent $42.50 at Trader Joe's on 09/27", 1000L),
             MockSms("WELLSFARGO", "Purchase of $120.00 authorized at Best Buy", 2000L),
@@ -44,9 +44,9 @@ class SmsInboxImporterTest {
             assertTrue("Expected ForwardForAi for SMS: '${sms.body}'", decision is FilterDecision.ForwardForAi)
 
             val analysis = HeuristicClassifier.classify(sms.address, sms.body, "com.google.android.apps.messaging")
-            assertEquals("TRANSACTION", analysis.classification)
-            assertTrue(analysis.transaction != null)
-            assertTrue(analysis.transaction!!.amount > 0.0)
+            assertEquals("REVIEW", analysis.classification)
+            assertTrue(analysis.decision.requiresReview)
+            assertTrue(!analysis.decision.saveTransaction)
         }
     }
 
@@ -62,9 +62,14 @@ class SmsInboxImporterTest {
             assertTrue("Expected ForwardForAi for scam SMS: '${sms.body}'", decision is FilterDecision.ForwardForAi)
 
             val analysis = HeuristicClassifier.classify(sms.address, sms.body, "com.google.android.apps.messaging")
-            assertEquals("SCAM_PHISHING", analysis.classification)
-            assertTrue(analysis.isScamOrPhishing)
-            assertTrue(analysis.riskScore >= 40)
+            if (sms.body.contains("bit.ly")) {
+                assertEquals("SCAM_PHISHING", analysis.classification)
+                assertTrue(analysis.decision.warn)
+            } else {
+                assertEquals("REVIEW", analysis.classification)
+                assertTrue(!analysis.decision.warn) // An unknown domain alone doesn't prove fraud.
+            }
+            assertTrue(!analysis.decision.hideNotification)
         }
     }
 
@@ -106,8 +111,8 @@ class SmsInboxImporterTest {
         }
 
         assertEquals(2, otpsDropped)
-        assertEquals(2, ignored)
-        assertEquals(2, transactions)
+        assertEquals(4, ignored) // Two financial messages are now retained for review.
+        assertEquals(0, transactions)
         assertEquals(1, scams)
     }
 }

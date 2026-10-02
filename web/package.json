@@ -6,6 +6,7 @@
     "dev": "next dev -p 3001",
     "build": "next build",
     "start": "next start -p 3001",
+    "test:notifications": "node --import ../backend/node_modules/tsx/dist/loader.mjs test/notification-routes.test.mts",
     "build:worker": "opennextjs-cloudflare build",
     "preview": "wrangler dev",
     "deploy": "opennextjs-cloudflare build && wrangler deploy",

@@ -164,7 +164,7 @@ fun SplashScreen(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "Privacy-First Financial Guardian",
+                    text = "Smart money. Safer alerts.",
                     color = WisePaper.copy(alpha = 0.9f),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium
@@ -180,7 +180,7 @@ fun SplashScreen(
                 .alpha(alphaAnim.value)
         ) {
             Text(
-                text = "Protected with On-Device AI • v1.0.0",
+                text = "Sensitive codes stay on-device • v1.0.0",
                 color = WisePaper.copy(alpha = 0.45f),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Normal

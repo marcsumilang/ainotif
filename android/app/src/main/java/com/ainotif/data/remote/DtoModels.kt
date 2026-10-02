@@ -7,8 +7,25 @@ data class ProcessNotificationRequest(
     val text: String,
     val title: String? = null,
     val packageName: String? = null,
-    val timestamp: Long? = null
+    val timestamp: Long? = null,
+    val categoryRules: List<CategoryRuleDto> = emptyList()
 )
+
+@Serializable
+data class CategoryRuleDto(val keyword: String, val category: String)
+
+@Serializable
+data class AiActionDecision(
+    val saveTransaction: Boolean = false,
+    val warn: Boolean = false,
+    val hideNotification: Boolean = false,
+    val requiresReview: Boolean = false,
+    val suggestCategory: Boolean = false,
+    val reasons: List<String> = emptyList()
+)
+
+@Serializable
+data class AiDiagnostics(val engine: String = "legacy")
 
 @Serializable
 data class TransactionData(
@@ -28,7 +45,9 @@ data class AiAnalysisResult(
     val scamIndicators: List<String> = emptyList(),
     val transaction: TransactionData? = null,
     val confidence: Double = 0.0,
-    val explanation: String = ""
+    val explanation: String = "",
+    val decision: AiActionDecision = AiActionDecision(),
+    val diagnostics: AiDiagnostics = AiDiagnostics()
 )
 
 @Serializable

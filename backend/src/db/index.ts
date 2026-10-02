@@ -3,6 +3,7 @@ import { neon } from "@neondatabase/serverless";
 import * as schema from "./schema.js";
 import { eq, desc, and, inArray, gte, lte } from "drizzle-orm";
 import crypto from "crypto";
+import { buildJevRequest, isSensitiveOtp, type ClassificationResult, type NotificationPayload } from "../ai/classifier.js";
 
 type DrizzleDb = NeonHttpDatabase<typeof schema>;
 let cachedDb: DrizzleDb | null = null;
@@ -35,12 +36,14 @@ interface MemoryStore {
   users: Map<string, schema.User>;
   transactions: schema.Transaction[];
   alerts: schema.SuspiciousAlert[];
+  analyses: schema.NotificationAnalysis[];
 }
 
 const memoryStore: MemoryStore = {
   users: new Map(),
   transactions: [],
   alerts: [],
+  analyses: [],
 };
 
 export async function ensureUser(id: string, email?: string, displayName?: string): Promise<schema.User> {
@@ -58,6 +61,8 @@ export async function ensureUser(id: string, email?: string, displayName?: strin
         id,
         email: email || `${id}@example.com`,
         displayName: displayName || "User",
+        plan: "free",
+        notificationCount: 0,
         createdAt: now,
         updatedAt: now,
       })
@@ -70,6 +75,8 @@ export async function ensureUser(id: string, email?: string, displayName?: strin
         id,
         email: email || `${id}@example.com`,
         displayName: displayName || "User",
+        plan: "free",
+        notificationCount: 0,
         createdAt: now,
         updatedAt: now,
       };
@@ -77,6 +84,10 @@ export async function ensureUser(id: string, email?: string, displayName?: strin
     }
     return user;
   }
+}
+
+class TransactionIdConflictError extends Error {
+  constructor() { super("Transaction ID already exists"); }
 }
 
 export async function saveTransaction(data: {
@@ -100,7 +111,10 @@ export async function saveTransaction(data: {
       const existingById = await drizzleDb.query.transactions.findFirst({
         where: eq(schema.transactions.id, data.id),
       });
-      if (existingById) return existingById;
+      if (existingById) {
+          if (existingById.userId !== data.userId) throw new TransactionIdConflictError();
+          return existingById;
+        }
     }
 
     // 2. Check for duplicate by content & timestamp within 5 minutes
@@ -112,6 +126,8 @@ export async function saveTransaction(data: {
         eq(schema.transactions.userId, data.userId),
         eq(schema.transactions.merchant, data.merchant),
         eq(schema.transactions.amount, data.amount),
+          eq(schema.transactions.currency, data.currency),
+          eq(schema.transactions.type, data.type),
         gte(schema.transactions.timestamp, fiveMinBefore),
         lte(schema.transactions.timestamp, fiveMinAfter)
       ),
@@ -139,11 +155,16 @@ export async function saveTransaction(data: {
   } else {
     if (data.id) {
       const existing = memoryStore.transactions.find((t) => t.id === data.id);
-      if (existing) return existing;
+      if (existing) {
+        if (existing.userId !== data.userId) throw new TransactionIdConflictError();
+        return existing;
+      }
     }
     const existing = memoryStore.transactions.find((t) =>
       t.userId === data.userId &&
       t.merchant === data.merchant &&
+      t.currency === data.currency &&
+      t.type === data.type &&
       Math.abs(t.amount - data.amount) < 0.001 &&
       Math.abs(t.timestamp.getTime() - data.timestamp.getTime()) <= 300000
     );
@@ -396,4 +417,32 @@ export async function getStats(userId: string) {
     totalAlerts: userAlerts.length,
     activeAlerts,
   };
+}
+
+export async function saveNotificationAnalysis(userId: string, payload: NotificationPayload, analysis: ClassificationResult): Promise<string | null> {
+  const rawNotification = `${payload.title ? payload.title + " : " : ""}${payload.text}`;
+  if (analysis.droppedOtp || isSensitiveOtp(rawNotification)) return null;
+  await ensureUser(userId);
+  const context = buildJevRequest(payload, analysis.diagnostics.model ?? "jev-latest").state;
+  const item = {
+    userId, rawNotification, sourcePackage: payload.packageName ?? null,
+    timestamp: new Date(payload.timestamp ?? Date.now()), requiresReview: analysis.decision.requiresReview,
+    analysis, context,
+  };
+  const db = getDb();
+  if (db) {
+    const [saved] = await db.insert(schema.notificationAnalyses).values(item).returning();
+    return saved.id;
+  }
+  const saved = { ...item, id: crypto.randomUUID(), createdAt: new Date() };
+  memoryStore.analyses.unshift(saved);
+  return saved.id;
+}
+
+export async function getNotificationReviews(userId: string): Promise<schema.NotificationAnalysis[]> {
+  const db = getDb();
+  if (db) return db.select().from(schema.notificationAnalyses)
+    .where(and(eq(schema.notificationAnalyses.userId, userId), eq(schema.notificationAnalyses.requiresReview, true)))
+    .orderBy(desc(schema.notificationAnalyses.createdAt)).limit(50);
+  return memoryStore.analyses.filter((item) => item.userId === userId && item.requiresReview).slice(0, 50);
 }
