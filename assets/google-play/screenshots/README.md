@@ -1,14 +1,12 @@
-# Phone screenshots to capture
+# Google Play phone screenshots
 
-Google Play asks screenshots to show the current, real in-app experience. These files are intentionally left for device captures rather than rendered UI mockups.
+These are direct 1080 × 1920 (9:16) captures of the Android app UI, exported as JPEGs. They use fictional sample data and no real financial messages or credentials.
 
-Capture four portrait screenshots from the release candidate at 1080 × 1920 or higher, 9:16, with synthetic demo data and a clean status bar. Keep the app UI visible and avoid hardware frames, account details, real financial messages, and third-party bank logos.
+| File | Suggested alt text |
+|---|---|
+| `01-financial-feed.jpg` | The NotifAi feed organizing sample spending and income into categories. |
+| `02-scam-radar.jpg` | Scam Radar showing a high-risk fictional message while hiding its contents for privacy. |
+| `03-spending-insights.jpg` | Spending Insights with sample monthly totals, category distribution, and an active alert. |
+| `04-privacy-center.jpg` | Settings with notification access enabled and the on-device sensitive-code privacy note. |
 
-Suggested order:
-
-1. `01-financial-feed.png` — the Feed with a few clearly categorized demo transactions.
-2. `02-scam-radar.png` — the Radar screen showing a representative suspicious-message alert.
-3. `03-spending-insights.png` — the Insights screen with its period controls, totals, and category chart.
-4. `04-privacy-center.png` — Settings showing notification access and the privacy controls.
-
-Before upload, confirm every image comes from the same build being submitted. Google Play currently recommends at least four 1080px screenshots for app recommendation surfaces. See `../README.md` for the current asset dimensions and source link.
+The images were captured from the current debug build on an Android emulator. Check that they match the release build before upload. Google recommends at least four 1080px screenshots for app recommendation surfaces; screenshots must show the actual app experience. See `../README.md` for the upload dimensions and official source.
