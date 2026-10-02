@@ -92,6 +92,7 @@ transactionsRouter.post("/bulk-categorize", async (c) => {
 });
 
 const CreateTransactionSchema = z.object({
+  id: z.string().optional(),
   amount: z.number().positive(),
   currency: z.string().default("USD"),
   merchant: z.string().min(1),
@@ -112,8 +113,9 @@ transactionsRouter.post("/", async (c) => {
     return c.json({ error: "Validation error", issues: parsed.error.issues }, 400);
   }
 
-  const { amount, currency, merchant, category, type, rawNotification, sourcePackage, timestamp } = parsed.data;
+  const { id, amount, currency, merchant, category, type, rawNotification, sourcePackage, timestamp } = parsed.data;
   const created = await saveTransaction({
+    id,
     userId,
     amount,
     currency,

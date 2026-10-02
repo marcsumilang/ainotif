@@ -53,8 +53,16 @@ fun StatsScreen(
     var selectedPeriod by remember { mutableStateOf("30D") } // 7D, 30D, 90D, YTD, ALL
     var isRefreshing by remember { mutableStateOf(false) }
 
+    // Defensive UI deduplication: remove exact duplicate rows if any exist in the database
+    val distinctTransactions = remember(transactions) {
+        transactions.distinctBy { tx ->
+            val timeBucket = tx.timestamp / 300000L
+            "${tx.amount}|${tx.currency}|${tx.merchant.trim().lowercase()}|${tx.type}|$timeBucket"
+        }
+    }
+
     // Filter transactions based on selected period
-    val periodTransactions = remember(transactions, selectedPeriod) {
+    val periodTransactions = remember(distinctTransactions, selectedPeriod) {
         val now = System.currentTimeMillis()
         val calendar = Calendar.getInstance()
         val cutoff = when (selectedPeriod) {

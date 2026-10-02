@@ -73,6 +73,7 @@ data class TransactionDto(
 
 @Serializable
 data class CreateTransactionDto(
+    val id: String? = null,
     val amount: Double,
     val currency: String = "USD",
     val merchant: String,

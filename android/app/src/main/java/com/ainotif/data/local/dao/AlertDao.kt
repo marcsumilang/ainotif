@@ -39,9 +39,15 @@ interface AlertDao {
     @Query("UPDATE suspicious_alerts SET isSynced = 1 WHERE id = :id")
     suspend fun markSynced(id: String)
 
+    @Query("DELETE FROM suspicious_alerts WHERE id = :id")
+    suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM suspicious_alerts WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>)
+
     @Query("DELETE FROM suspicious_alerts")
     suspend fun clearAll()
 
     @Query("SELECT EXISTS(SELECT 1 FROM suspicious_alerts WHERE rawNotification = :rawNotification AND ABS(timestamp - :timestamp) <= :toleranceMs LIMIT 1)")
-    suspend fun hasSimilarAlert(rawNotification: String, timestamp: Long, toleranceMs: Long = 60000L): Boolean
+    suspend fun hasSimilarAlert(rawNotification: String, timestamp: Long, toleranceMs: Long = 300000L): Boolean
 }

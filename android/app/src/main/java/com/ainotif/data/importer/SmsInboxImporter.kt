@@ -169,6 +169,8 @@ object SmsInboxImporter {
                     }
                 }
 
+                repository.deduplicateLocalRecords()
+
                 Log.i(
                     TAG,
                     "SMS Import completed: $total scanned, $txCount transactions, $alertCount alerts, $otpCount OTPs dropped, $dupCount duplicates skipped."

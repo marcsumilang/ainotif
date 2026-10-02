@@ -38,6 +38,10 @@ import {
   Building2,
   ShoppingBag,
   Coffee,
+  Activity,
+  Film,
+  Car,
+  Receipt,
   HelpCircle,
   QrCode,
   Download,
@@ -695,11 +699,24 @@ export default function Dashboard() {
   const getMerchantIcon = (merchant: string, category: string) => {
     const m = merchant.toLowerCase();
     const c = category.toLowerCase();
-    if (m.includes("starbucks") || m.includes("coffee")) return <Coffee className="w-4 h-4 text-[#163300]" />;
-    if (m.includes("trader") || m.includes("market") || m.includes("grocer") || c.includes("food"))
+    if (m.includes("starbucks") || m.includes("coffee") || c.includes("food") || c.includes("dining"))
+      return <Coffee className="w-4 h-4 text-[#163300]" />;
+    if (c.includes("grocer") || m.includes("trader") || m.includes("market"))
       return <ShoppingBag className="w-4 h-4 text-[#163300]" />;
-    if (m.includes("bank") || m.includes("chase") || m.includes("citi") || m.includes("deposit") || c.includes("salary"))
+    if (c.includes("health") || c.includes("fitness") || m.includes("mercury") || m.includes("pharmacy") || m.includes("gym"))
+      return <Activity className="w-4 h-4 text-[#163300]" />;
+    if (c.includes("transport") || c.includes("travel") || m.includes("uber") || m.includes("grab") || m.includes("gas") || m.includes("fuel"))
+      return <Car className="w-4 h-4 text-[#163300]" />;
+    if (c.includes("entertainment") || m.includes("netflix") || m.includes("spotify") || m.includes("movie"))
+      return <Film className="w-4 h-4 text-[#163300]" />;
+    if (c.includes("bill") || c.includes("utilit"))
+      return <Receipt className="w-4 h-4 text-[#163300]" />;
+    if (c.includes("transfer") || m.includes("transfer") || m.includes("wire") || m.includes("remit"))
+      return <ArrowLeftRight className="w-4 h-4 text-[#163300]" />;
+    if (c.includes("income") || c.includes("salary") || m.includes("bank") || m.includes("chase") || m.includes("citi") || m.includes("deposit"))
       return <Building2 className="w-4 h-4 text-[#163300]" />;
+    if (c.includes("shopping") || m.includes("amazon") || m.includes("shopee") || m.includes("store"))
+      return <ShoppingBag className="w-4 h-4 text-[#163300]" />;
     return <CreditCard className="w-4 h-4 text-[#163300]" />;
   };
 
@@ -1387,12 +1404,16 @@ export default function Dashboard() {
                     onChange={(e) => setBulkCategory(e.target.value)}
                     className="px-3 py-1.5 rounded-full text-xs font-bold bg-white/20 text-white border border-white/30 outline-none cursor-pointer"
                   >
+                    <option value="Food & Dining" className="text-black">Food & Dining</option>
                     <option value="Groceries" className="text-black">Groceries</option>
-                    <option value="Dining & Coffee" className="text-black">Dining & Coffee</option>
-                    <option value="Salary & Income" className="text-black">Salary & Income</option>
-                    <option value="Utilities" className="text-black">Utilities</option>
                     <option value="Shopping" className="text-black">Shopping</option>
-                    <option value="Subscriptions" className="text-black">Subscriptions</option>
+                    <option value="Transport & Travel" className="text-black">Transport & Travel</option>
+                    <option value="Entertainment" className="text-black">Entertainment</option>
+                    <option value="Bills & Utilities" className="text-black">Bills & Utilities</option>
+                    <option value="Health & Fitness" className="text-black">Health & Fitness</option>
+                    <option value="Transfers" className="text-black">Transfers</option>
+                    <option value="Income" className="text-black">Income</option>
+                    <option value="General" className="text-black">General</option>
                   </select>
                   <button
                     onClick={() => handleBulkCategorize(bulkCategory)}

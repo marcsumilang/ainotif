@@ -128,6 +128,7 @@ export async function PATCH(req: NextRequest) {
 }
 
 const CreateTransactionSchema = z.object({
+  id: z.string().optional(),
   amount: z.number().positive(),
   currency: z.string().default("USD"),
   merchant: z.string().min(1),
@@ -153,9 +154,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Validation error", issues: parsed.error.issues }, { status: 400 });
     }
 
-    const { amount, currency, merchant, category, type, rawNotification, sourcePackage, timestamp } = parsed.data;
+    const { id, amount, currency, merchant, category, type, rawNotification, sourcePackage, timestamp } = parsed.data;
 
     const created = await saveTransaction({
+      id,
       userId,
       amount,
       currency,

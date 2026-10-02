@@ -34,6 +34,9 @@ interface TransactionDao {
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun deleteById(id: String)
 
+    @Query("DELETE FROM transactions WHERE id IN (:ids)")
+    suspend fun deleteByIds(ids: List<String>)
+
     @Query("DELETE FROM transactions")
     suspend fun clearAll()
 
@@ -44,5 +47,25 @@ interface TransactionDao {
     suspend fun getTotalCredit(): Double?
 
     @Query("SELECT EXISTS(SELECT 1 FROM transactions WHERE rawNotification = :rawNotification AND ABS(timestamp - :timestamp) <= :toleranceMs LIMIT 1)")
-    suspend fun hasSimilarTransaction(rawNotification: String, timestamp: Long, toleranceMs: Long = 60000L): Boolean
+    suspend fun hasSimilarTransaction(rawNotification: String, timestamp: Long, toleranceMs: Long = 300000L): Boolean
+
+    @Query("SELECT EXISTS(SELECT 1 FROM transactions WHERE (rawNotification = :rawNotification OR (ABS(amount - :amount) < 0.001 AND currency = :currency AND merchant = :merchant)) AND ABS(timestamp - :timestamp) <= :toleranceMs LIMIT 1)")
+    suspend fun hasSimilarTransactionExact(
+        rawNotification: String,
+        amount: Double,
+        currency: String,
+        merchant: String,
+        timestamp: Long,
+        toleranceMs: Long = 300000L
+    ): Boolean
+
+    @Query("SELECT * FROM transactions WHERE (rawNotification = :rawNotification OR (ABS(amount - :amount) < 0.001 AND currency = :currency AND merchant = :merchant)) AND ABS(timestamp - :timestamp) <= :toleranceMs LIMIT 1")
+    suspend fun findMatchingTransaction(
+        rawNotification: String,
+        amount: Double,
+        currency: String,
+        merchant: String,
+        timestamp: Long,
+        toleranceMs: Long = 300000L
+    ): TransactionEntity?
 }
