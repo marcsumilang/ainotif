@@ -2,6 +2,7 @@ package com.ainotif.ui.screens
 
 import android.content.Intent
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -9,8 +10,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -24,8 +27,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.ainotif.service.AppFilterManager
 import com.ainotif.ui.theme.*
 import kotlinx.coroutines.launch
@@ -39,16 +40,25 @@ fun OnboardingWizard(
     val coroutineScope = rememberCoroutineScope()
     val pagerState = rememberPagerState(pageCount = { 3 })
 
-    Dialog(
-        onDismissRequest = {}, // Cannot be dismissed without completing or skipping
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+    BackHandler(enabled = pagerState.currentPage > 0) {
+        coroutineScope.launch {
+            pagerState.animateScrollToPage(pagerState.currentPage - 1)
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(WiseDarkBackground)
+            .safeDrawingPadding()
+            .padding(16.dp),
+        contentAlignment = Alignment.Center
     ) {
         Surface(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
+            modifier = Modifier.fillMaxSize(),
             shape = RoundedCornerShape(24.dp),
-            color = WisePaper
+            color = WisePaper,
+            shadowElevation = 6.dp
         ) {
             Column(
                 modifier = Modifier
@@ -65,7 +75,7 @@ fun OnboardingWizard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "AiNotif Setup",
+                        text = "NotifAi Setup",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = WiseForestInk
@@ -85,8 +95,19 @@ fun OnboardingWizard(
                     when (page) {
                         0 -> OnboardingStep1Privacy()
                         1 -> OnboardingStep2Permission {
-                            val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                            context.startActivity(intent)
+                            try {
+                                val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                try {
+                                    val intent = Intent(Settings.ACTION_SETTINGS).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
+                                } catch (_: Exception) {}
+                            }
                         }
                         2 -> OnboardingStep3Apps(appFilterManager)
                     }
@@ -173,7 +194,8 @@ private fun OnboardingStep1Privacy() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -205,7 +227,7 @@ private fun OnboardingStep1Privacy() {
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "Your privacy is paramount. AiNotif uses a strict on-device regex gate that instantly discards one-time passwords (OTPs), 2FA codes, and credentials before anything is logged or analyzed.\n\nNo sensitive credentials ever leave your phone.",
+            text = "Your privacy is paramount. NotifAi uses a strict on-device regex gate that instantly discards one-time passwords (OTPs), 2FA codes, and credentials before anything is logged or analyzed.\n\nNo sensitive credentials ever leave your phone.",
             style = MaterialTheme.typography.bodyMedium,
             color = WiseCharcoal,
             textAlign = TextAlign.Center,
@@ -219,7 +241,8 @@ private fun OnboardingStep2Permission(onOpenSettings: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -251,7 +274,7 @@ private fun OnboardingStep2Permission(onOpenSettings: () -> Unit) {
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "To automatically parse bank purchases and intercept SMS phishing attacks in real time, AiNotif needs Android Notification Listener permission.",
+            text = "To automatically parse bank purchases and intercept SMS phishing attacks in real time, NotifAi needs Android Notification Listener permission.",
             style = MaterialTheme.typography.bodyMedium,
             color = WiseCharcoal,
             textAlign = TextAlign.Center,
@@ -294,7 +317,7 @@ private fun OnboardingStep3Apps(appFilterManager: AppFilterManager) {
         Spacer(modifier = Modifier.height(6.dp))
 
         Text(
-            text = "Select the financial and messaging apps AiNotif is permitted to scan. Non-selected apps are ignored completely.",
+            text = "Select the financial and messaging apps NotifAi is permitted to scan. Non-selected apps are ignored completely.",
             style = MaterialTheme.typography.bodySmall,
             color = WiseCharcoal
         )

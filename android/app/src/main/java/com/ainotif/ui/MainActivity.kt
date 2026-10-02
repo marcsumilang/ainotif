@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Box
@@ -29,6 +30,7 @@ import com.ainotif.ui.screens.AlertsScreen
 import com.ainotif.ui.screens.FeedScreen
 import com.ainotif.ui.screens.OnboardingWizard
 import com.ainotif.ui.screens.SettingsScreen
+import com.ainotif.ui.screens.SplashScreen
 import com.ainotif.ui.screens.StatsScreen
 import com.ainotif.ui.theme.AiNotifTheme
 import io.sentry.Sentry
@@ -43,6 +45,7 @@ sealed class Screen(val route: String, val title: String, val icon: androidx.com
 class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
     // waiting for view to draw to better represent a captured error with a screenshot
     findViewById<android.view.View>(android.R.id.content).viewTreeObserver.addOnGlobalLayoutListener {
@@ -71,14 +74,15 @@ class MainActivity : FragmentActivity() {
                 val isOnboarded by preferencesManager.isOnboarded.collectAsState()
                 val isBiometricEnabled by preferencesManager.isBiometricEnabled.collectAsState()
 
+                var showSplash by remember { mutableStateOf(true) }
                 var isUnlocked by remember { mutableStateOf(!isBiometricEnabled) }
 
-                // Trigger biometric prompt if enabled and not yet unlocked
-                LaunchedEffect(isBiometricEnabled) {
-                    if (isBiometricEnabled && !isUnlocked) {
+                // Trigger biometric prompt if enabled and not yet unlocked (after splash and onboarding)
+                LaunchedEffect(isBiometricEnabled, showSplash, isOnboarded) {
+                    if (!showSplash && isOnboarded && isBiometricEnabled && !isUnlocked) {
                         BiometricAuthManager.promptBiometric(
                             activity = this@MainActivity,
-                            title = "Unlock AiNotif",
+                            title = "Unlock NotifAi",
                             subtitle = "Verify your fingerprint or face to view financial data",
                             onSuccess = { isUnlocked = true },
                             onError = { /* Keep locked */ }
@@ -88,16 +92,20 @@ class MainActivity : FragmentActivity() {
                     }
                 }
 
-                if (!isOnboarded) {
+                if (showSplash) {
+                    SplashScreen(
+                        onSplashFinished = {
+                            showSplash = false
+                        }
+                    )
+                } else if (!isOnboarded) {
                     OnboardingWizard(
                         appFilterManager = appFilterManager,
                         onComplete = {
                             preferencesManager.setOnboarded(true)
                         }
                     )
-                }
-
-                if (!isUnlocked) {
+                } else if (!isUnlocked) {
                     // Biometric Lock Screen
                     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
@@ -105,7 +113,7 @@ class MainActivity : FragmentActivity() {
                                 onClick = {
                                     BiometricAuthManager.promptBiometric(
                                         activity = this@MainActivity,
-                                        title = "Unlock AiNotif",
+                                        title = "Unlock NotifAi",
                                         subtitle = "Verify your identity",
                                         onSuccess = { isUnlocked = true },
                                         onError = { /* Keep locked */ }
@@ -229,7 +237,8 @@ class MainActivity : FragmentActivity() {
 
     private fun handleAuthIntent(intent: Intent?) {
         val uri = intent?.data ?: return
-        if (uri.scheme == "ainotif" && uri.host == "oauth" && uri.path?.startsWith("/callback") == true) {
+        val isAuthScheme = uri.scheme == "ainotif" || uri.scheme == "notifai"
+        if (isAuthScheme && uri.host == "oauth" && uri.path?.startsWith("/callback") == true) {
             val token = uri.getQueryParameter("token")
             val userId = uri.getQueryParameter("userId")
             val email = uri.getQueryParameter("email") ?: ""

@@ -1,0 +1,25 @@
+{
+  "name": "notifai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NotifAi - Privacy-first Android notification interception & financial intelligence",
+  "scripts": {
+    "adb-install": "node scripts/adb-install.js",
+    "adb:install": "node scripts/adb-install.js",
+    "adb:install:launch": "node scripts/adb-install.js --launch",
+    "adb:devices": "node scripts/adb-install.js --devices",
+    "adb:launch": "node scripts/adb-install.js --launch-only",
+    "build:apk": "cd android && ./gradlew assembleDebug && cp app/build/outputs/apk/debug/app-debug.apk ../ainotif-debug.apk && cp app/build/outputs/apk/debug/app-debug.apk ../notifai-debug.apk",
+    "build:apk:release": "cd android && ./gradlew assembleRelease",
+    "build-and-install": "npm run build:apk && npm run adb-install",
+    "dev:backend": "cd backend && pnpm dev",
+    "dev:web": "cd web && pnpm dev"
+  },
+  "keywords": [
+    "notifai",
+    "android",
+    "adb"
+  ],
+  "author": "Marc Jherico Sumilang",
+  "license": "UNLICENSED"
+}

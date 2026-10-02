@@ -80,9 +80,10 @@ class ClerkAuthManager(context: Context) {
     /**
      * Launches Clerk OAuth sign-in flow via Chrome Custom Tabs (or system browser fallback)
      */
-    fun launchClerkSignIn(context: Context, webBaseUrl: String) {
+    fun launchClerkSignIn(context: Context, webBaseUrl: String, mode: String = "signin") {
         val cleanBase = webBaseUrl.trim().trimEnd('/')
-        val authUrl = if (cleanBase.endsWith("/auth/mobile")) cleanBase else "$cleanBase/auth/mobile"
+        val basePath = if (cleanBase.endsWith("/auth/mobile")) cleanBase else "$cleanBase/auth/mobile"
+        val authUrl = if (basePath.contains("?")) "$basePath&mode=$mode" else "$basePath?mode=$mode"
         try {
             val customTabsIntent = CustomTabsIntent.Builder()
                 .setShowTitle(true)
@@ -97,5 +98,12 @@ class ClerkAuthManager(context: Context) {
                 // Ignore if no browser available
             }
         }
+    }
+
+    /**
+     * Launches Clerk OAuth sign-up / account registration flow
+     */
+    fun launchClerkSignUp(context: Context, webBaseUrl: String) {
+        launchClerkSignIn(context, webBaseUrl, mode = "signup")
     }
 }

@@ -161,6 +161,19 @@ cd android
 ./gradlew installDebug
 ```
 
+#### Fast ADB Install via NPM:
+From the project root (or inside `web/` / `backend/`), you can directly install the newest APK:
+```bash
+# Automatically finds the newest APK and installs it to the connected ADB device
+npm run adb-install
+
+# Install and automatically launch the app
+npm run adb-install -- --launch
+
+# Build the latest APK and immediately install it
+npm run build-and-install
+```
+
 ---
 
 ## Key Features

@@ -68,7 +68,7 @@ object DataExporter {
             putExtra(Intent.EXTRA_SUBJECT, subject)
             putExtra(Intent.EXTRA_TEXT, content)
         }
-        val chooser = Intent.createChooser(sendIntent, "Export AiNotif Data")
+        val chooser = Intent.createChooser(sendIntent, "Export NotifAi Data")
         chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(chooser)
     }

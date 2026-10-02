@@ -6,4 +6,8 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="wise_forest_ink">#163300</color>
+    <color name="wise_lime_voltage">#9FE870</color>
+    <color name="wise_spruce">#235414</color>
+    <color name="wise_paper">#FFFFFFFF</color>
 </resources>

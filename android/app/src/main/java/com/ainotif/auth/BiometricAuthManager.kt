@@ -16,7 +16,7 @@ object BiometricAuthManager {
 
     fun promptBiometric(
         activity: FragmentActivity,
-        title: String = "AiNotif Biometric Authentication",
+        title: String = "NotifAi Biometric Authentication",
         subtitle: String = "Verify your fingerprint or face to continue",
         onSuccess: () -> Unit,
         onError: (String) -> Unit

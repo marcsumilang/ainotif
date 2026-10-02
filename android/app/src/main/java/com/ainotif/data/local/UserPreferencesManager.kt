@@ -56,6 +56,9 @@ class UserPreferencesManager(context: Context) {
     private val _backendUrl = MutableStateFlow(prefs.getString(KEY_BACKEND_URL, BuildConfig.BACKEND_BASE_URL) ?: BuildConfig.BACKEND_BASE_URL)
     val backendUrl: StateFlow<String> = _backendUrl.asStateFlow()
 
+    private val _webUrl = MutableStateFlow(prefs.getString(KEY_WEB_URL, BuildConfig.WEB_BASE_URL) ?: BuildConfig.WEB_BASE_URL)
+    val webUrl: StateFlow<String> = _webUrl.asStateFlow()
+
     fun setBaseCurrency(currency: String) {
         prefs.edit().putString(KEY_BASE_CURRENCY, currency).apply()
         _baseCurrency.value = currency
@@ -136,6 +139,16 @@ class UserPreferencesManager(context: Context) {
         _backendUrl.value = BuildConfig.BACKEND_BASE_URL
     }
 
+    fun setWebUrl(url: String) {
+        prefs.edit().putString(KEY_WEB_URL, url).apply()
+        _webUrl.value = url
+    }
+
+    fun resetWebUrl() {
+        prefs.edit().remove(KEY_WEB_URL).apply()
+        _webUrl.value = BuildConfig.WEB_BASE_URL
+    }
+
     /**
      * Threshold risk score required to trigger an alert according to user sensitivity.
      */
@@ -164,5 +177,6 @@ class UserPreferencesManager(context: Context) {
         private const val KEY_DEV_MODE_UNLOCKED = "pref_dev_mode_unlocked"
         private const val KEY_LAST_SYNC_TIME = "pref_last_sync_time"
         private const val KEY_BACKEND_URL = "pref_backend_url"
+        private const val KEY_WEB_URL = "pref_web_url"
     }
 }

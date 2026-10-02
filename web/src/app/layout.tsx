@@ -17,7 +17,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <ClerkProvider>
+    <ClerkProvider
+      signInFallbackRedirectUrl="/dashboard"
+      signUpFallbackRedirectUrl="/dashboard"
+      signInForceRedirectUrl="/dashboard"
+      signUpForceRedirectUrl="/dashboard"
+    >
       <html lang="en">
         <body className="min-h-screen bg-[#f7f9f6] text-[#454745] antialiased selection:bg-[#9fe870] selection:text-[#163300]">
           {children}

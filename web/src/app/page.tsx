@@ -97,8 +97,8 @@ export default function LandingPage() {
   useEffect(() => {
     // Generate QR code for mobile pairing or APK download
     const apkDownloadUrl = typeof window !== "undefined"
-      ? `${window.location.origin}/ainotif-debug.apk`
-      : "https://notifai.app/ainotif-debug.apk";
+      ? `${window.location.origin}/notifai-debug.apk`
+      : "https://notifai.app/notifai-debug.apk";
 
     QRCode.toDataURL(apkDownloadUrl, {
       width: 200,
@@ -110,7 +110,7 @@ export default function LandingPage() {
   }, []);
 
   const handleCopyApkLink = () => {
-    const apkDownloadUrl = `${window.location.origin}/ainotif-debug.apk`;
+    const apkDownloadUrl = `${window.location.origin}/notifai-debug.apk`;
     navigator.clipboard.writeText(apkDownloadUrl);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
@@ -583,7 +583,7 @@ export default function LandingPage() {
 
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 pt-2">
                   <a
-                    href="/ainotif-debug.apk"
+                    href="/notifai-debug.apk"
                     download="NotifAi-release.apk"
                     className="bg-[#9fe870] text-[#163300] hover:bg-[#8ed662] font-black text-sm px-8 py-4 rounded-full transition-all shadow-md flex items-center justify-center gap-2.5"
                   >

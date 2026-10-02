@@ -719,7 +719,7 @@ export default function Dashboard() {
                     Notif<span className="text-[#054d28]">Ai</span>
                   </span>
                   <span className="bg-[#e2f6d5] text-[#163300] text-[11px] font-bold px-2 py-0.5 rounded-full border border-[#9fe870]/50 uppercase tracking-wider">
-                    Console
+                    Portal
                   </span>
                 </div>
                 <p className="text-[11px] text-[#868685] font-medium hidden sm:block">
@@ -841,7 +841,7 @@ export default function Dashboard() {
                 </div>
               ) : (
                 <div className="flex items-center gap-1.5">
-                  <SignInButton mode="modal">
+                  <SignInButton mode="modal" forceRedirectUrl="/dashboard" fallbackRedirectUrl="/dashboard">
                     <button className="bg-[#9fe870] hover:bg-[#8ed662] text-[#163300] font-bold rounded-full px-3.5 py-1.5 text-xs shadow-sm transition-all active:scale-95 cursor-pointer">
                       Sign In
                     </button>

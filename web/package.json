@@ -8,7 +8,8 @@
     "start": "next start -p 3001",
     "build:worker": "opennextjs-cloudflare build",
     "preview": "wrangler dev",
-    "deploy": "opennextjs-cloudflare build && wrangler deploy"
+    "deploy": "opennextjs-cloudflare build && wrangler deploy",
+    "adb-install": "node ../scripts/adb-install.js"
   },
   "dependencies": {
     "@clerk/backend": "^3.21.1",

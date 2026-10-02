@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="288dp"
+    android:height="288dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <!-- Rounded Background Container -->
+    <path
+        android:fillColor="#163300"
+        android:pathData="M128,0 L384,0 C454.7,0 512,57.3 512,128 L512,384 C512,454.7 454.7,512 384,512 L128,512 C57.3,512 0,454.7 0,384 L0,128 C0,57.3 57.3,0 128,0 Z" />
+    <!-- Shield Background Tint -->
+    <path
+        android:fillColor="#235414"
+        android:fillAlpha="0.3"
+        android:pathData="M256,70 C345,110 394,116 414,126 C416,230 380,340 256,438 C132,340 96,230 98,126 C118,116 167,110 256,70 Z" />
+    <!-- Shield Outline -->
+    <path
+        android:strokeColor="#9FE870"
+        android:strokeWidth="28"
+        android:strokeLineJoin="round"
+        android:pathData="M256,70 C345,110 394,116 414,126 C416,230 380,340 256,438 C132,340 96,230 98,126 C118,116 167,110 256,70 Z" />
+    <!-- NotifAi 'N' Monogram -->
+    <path
+        android:strokeColor="#9FE870"
+        android:strokeWidth="32"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M196,340 L196,182 L316,330 L316,172" />
+    <!-- Radar Wave 1 -->
+    <path
+        android:strokeColor="#9FE870"
+        android:strokeWidth="22"
+        android:strokeLineCap="round"
+        android:pathData="M330,115 C352,128 368,148 376,172" />
+    <!-- Radar Wave 2 -->
+    <path
+        android:strokeColor="#9FE870"
+        android:strokeWidth="20"
+        android:strokeAlpha="0.65"
+        android:strokeLineCap="round"
+        android:pathData="M362,85 C396,106 422,136 434,172" />
+</vector>

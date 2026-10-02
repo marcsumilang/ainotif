@@ -74,6 +74,7 @@ fun SettingsScreen(
     val isDevModeUnlocked by prefs.isDeveloperModeUnlocked.collectAsState()
     val lastSyncTime by prefs.lastSyncTime.collectAsState()
     val backendUrl by prefs.backendUrl.collectAsState()
+    val webUrl by prefs.webUrl.collectAsState()
 
     var isListenerPermissionGranted by remember {
         mutableStateOf(NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName))
@@ -126,7 +127,7 @@ fun SettingsScreen(
     var manualInputText by remember { mutableStateOf("") }
     var manualUserIdInput by remember { mutableStateOf("") }
     var manualEmailInput by remember { mutableStateOf("") }
-    var webAuthUrlInput by remember { mutableStateOf("http://10.0.2.2:3001") }
+    var webAuthUrlInput by remember(webUrl) { mutableStateOf(webUrl) }
     var isSyncingNow by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -309,7 +310,7 @@ fun SettingsScreen(
 
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "Scan your device SMS inbox to import past banking alerts, transactions, and phishing fraud attempts directly into AiNotif.",
+                            "Scan your device SMS inbox to import past banking alerts, transactions, and phishing fraud attempts directly into NotifAi.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                         )
@@ -615,7 +616,7 @@ fun SettingsScreen(
                         // 3. Auto-dismiss warning notification delay
                         Text("Auto-Clear Warning Notification", fontWeight = FontWeight.SemiBold)
                         Text(
-                            "Automatically remove AiNotif's warning alert from notification shade after:",
+                            "Automatically remove NotifAi's warning alert from notification shade after:",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
@@ -845,7 +846,7 @@ fun SettingsScreen(
                             OutlinedButton(
                                 onClick = {
                                     val csv = DataExporter.toCsv(transactions)
-                                    DataExporter.shareExport(context, csv, "text/csv", "AiNotif Transactions Export.csv")
+                                    DataExporter.shareExport(context, csv, "text/csv", "NotifAi Transactions Export.csv")
                                 },
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(percent = 50),
@@ -860,7 +861,7 @@ fun SettingsScreen(
                             OutlinedButton(
                                 onClick = {
                                     val json = DataExporter.toJson(transactions)
-                                    DataExporter.shareExport(context, json, "application/json", "AiNotif Transactions Export.json")
+                                    DataExporter.shareExport(context, json, "application/json", "NotifAi Transactions Export.json")
                                 },
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(percent = 50),
@@ -1010,9 +1011,9 @@ fun SettingsScreen(
                             ) {
                                 Button(
                                     onClick = {
-                                        authManager.launchClerkSignIn(context, webAuthUrlInput)
+                                        authManager.launchClerkSignIn(context, webAuthUrlInput, mode = "signin")
                                     },
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.weight(1.1f),
                                     shape = RoundedCornerShape(10.dp),
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = com.ainotif.ui.theme.WiseForestInk,
@@ -1020,17 +1021,28 @@ fun SettingsScreen(
                                     )
                                 ) {
                                     Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Sign In with Clerk", fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Sign In", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        authManager.launchClerkSignUp(context, webAuthUrlInput)
+                                    },
+                                    modifier = Modifier.weight(1.1f),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Sign Up", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                 }
 
                                 OutlinedButton(
                                     onClick = { showManualTokenDialog = true },
-                                    shape = RoundedCornerShape(10.dp)
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp)
                                 ) {
-                                    Icon(Icons.Default.QrCode, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Pair")
+                                    Icon(Icons.Default.QrCode, contentDescription = "Manual Pair", modifier = Modifier.size(16.dp))
                                 }
                             }
 

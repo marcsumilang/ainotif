@@ -233,8 +233,8 @@ class AiNotificationListenerService : NotificationListenerService() {
         // Action 2: Share warning with family/friends
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, "⚠️ Phishing Scam Warning Intercepted by AiNotif")
-            putExtra(Intent.EXTRA_TEXT, "Scam Warning intercepted by AiNotif: ${alert.reason}\n\nDeceptive message: \"${alert.rawNotification}\"")
+            putExtra(Intent.EXTRA_SUBJECT, "⚠️ Phishing Scam Warning Intercepted by NotifAi")
+            putExtra(Intent.EXTRA_TEXT, "Scam Warning intercepted by NotifAi: ${alert.reason}\n\nDeceptive message: \"${alert.rawNotification}\"")
         }
         val shareChooser = Intent.createChooser(shareIntent, "Share Scam Warning")
         val sharePendingIntent = PendingIntent.getActivity(
@@ -248,7 +248,7 @@ class AiNotificationListenerService : NotificationListenerService() {
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle("⚠️ Suspicious Scam Intercepted (${alert.riskScore}% Risk)")
             .setContentText(alert.reason)
-            .setStyle(NotificationCompat.BigTextStyle().bigText("AiNotif Warning: ${alert.reason}\n\nOriginal Text: ${alert.rawNotification}"))
+            .setStyle(NotificationCompat.BigTextStyle().bigText("NotifAi Warning: ${alert.reason}\n\nOriginal Text: ${alert.rawNotification}"))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(openRadarPendingIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Dismiss", dismissPendingIntent)
