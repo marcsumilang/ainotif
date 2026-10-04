@@ -12,6 +12,6 @@
   },
   "vars": {
     "TYPESAFE_MODEL": "jev-latest",
-    "DEV_MOCK_AUTH": "true"
+    "DEV_MOCK_AUTH": "false"
   }
 }

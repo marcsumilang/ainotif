@@ -141,10 +141,11 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   SGD: "S$",
 };
 
-function convertCurrency(amount: number, from: string, to: string): number {
+function convertCurrency(amount: number, from: string, to: string): number | null {
   if (from.toUpperCase() === to.toUpperCase()) return amount;
-  const fromRate = RATES_TO_USD[from.toUpperCase()] || 1.0;
-  const toRate = RATES_TO_USD[to.toUpperCase()] || 1.0;
+  const fromRate = RATES_TO_USD[from.toUpperCase()];
+  const toRate = RATES_TO_USD[to.toUpperCase()];
+  if (fromRate === undefined || toRate === undefined) return null;
   const inUsd = amount * fromRate;
   return inUsd / toRate;
 }
@@ -384,10 +385,18 @@ export default function Dashboard() {
   const normalizedStats = useMemo(() => {
     let spent = 0;
     let received = 0;
+    const unconvertedCurrencies = new Set<string>();
+    let unconvertedCount = 0;
     const breakdown: Record<string, number> = {};
 
     for (const t of transactions) {
+      if (t.type !== "DEBIT" && t.type !== "CREDIT") continue;
       const converted = convertCurrency(t.amount, t.currency || "USD", baseCurrency);
+      if (converted === null) {
+        unconvertedCount += 1;
+        unconvertedCurrencies.add(t.currency || "Unknown");
+        continue;
+      }
       if (t.type === "DEBIT") {
         spent += converted;
         breakdown[t.category] = (breakdown[t.category] || 0) + converted;
@@ -402,6 +411,8 @@ export default function Dashboard() {
       totalReceived: Math.round(received * 100) / 100,
       netFlow: Math.round(net * 100) / 100,
       categoryBreakdown: breakdown,
+      unconvertedCount,
+      unconvertedCurrencies: [...unconvertedCurrencies].sort(),
       totalTransactions: transactions.length,
       activeAlerts: alerts.filter((a) => !a.isDismissed).length,
       totalAlerts: alerts.length,
@@ -942,6 +953,11 @@ export default function Dashboard() {
         )}
 
         <NotificationReviewQueue authToken={authToken} refreshKey={simLoading} />
+        {normalizedStats.unconvertedCount > 0 && (
+          <p className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            {normalizedStats.unconvertedCount} transaction(s) in {normalizedStats.unconvertedCurrencies.join(", ")} are excluded from converted totals because no {baseCurrency} conversion rate is available. Original amounts remain in the ledger.
+          </p>
+        )}
 
         {/* ======================= OVERVIEW TAB ======================= */}
         {activeTab === "overview" && (

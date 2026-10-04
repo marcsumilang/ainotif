@@ -55,10 +55,7 @@ fun StatsScreen(
 
     // Defensive UI deduplication: remove exact duplicate rows if any exist in the database
     val distinctTransactions = remember(transactions) {
-        transactions.distinctBy { tx ->
-            val timeBucket = tx.timestamp / 300000L
-            "${tx.amount}|${tx.currency}|${tx.merchant.trim().lowercase()}|${tx.type}|$timeBucket"
-        }
+        transactions.distinctBy { it.id }
     }
 
     // Filter transactions based on selected period
@@ -80,19 +77,24 @@ fun StatsScreen(
             }
             else -> 0L // ALL
         }
-        transactions.filter { it.timestamp >= cutoff }
+        distinctTransactions.filter { it.timestamp >= cutoff }
     }
 
     // Normalized period totals in base currency
     val totalDebit = remember(periodTransactions, baseCurrency) {
         periodTransactions.filter { it.type == "DEBIT" }.sumOf {
-            CurrencyConverter.convert(it.amount, it.currency, baseCurrency)
+            CurrencyConverter.convert(it.amount, it.currency, baseCurrency) ?: 0.0
         }
     }
 
     val totalCredit = remember(periodTransactions, baseCurrency) {
         periodTransactions.filter { it.type == "CREDIT" }.sumOf {
-            CurrencyConverter.convert(it.amount, it.currency, baseCurrency)
+            CurrencyConverter.convert(it.amount, it.currency, baseCurrency) ?: 0.0
+        }
+    }
+    val unconvertedCount = remember(periodTransactions, baseCurrency) {
+        periodTransactions.count {
+            it.type in setOf("DEBIT", "CREDIT") && CurrencyConverter.convert(it.amount, it.currency, baseCurrency) == null
         }
     }
 
@@ -102,7 +104,7 @@ fun StatsScreen(
         for (tx in periodTransactions) {
             if (tx.type == "DEBIT") {
                 val converted = CurrencyConverter.convert(tx.amount, tx.currency, baseCurrency)
-                map[tx.category] = (map[tx.category] ?: 0.0) + converted
+                if (converted != null) map[tx.category] = (map[tx.category] ?: 0.0) + converted
             }
         }
         map.toList().sortedByDescending { it.second }
@@ -231,6 +233,17 @@ fun StatsScreen(
                             )
                         }
                     }
+                }
+            }
+
+            if (unconvertedCount > 0) {
+                item {
+                    Text(
+                        "$unconvertedCount transaction(s) excluded from converted totals because no $baseCurrency rate is available. Original amounts remain in the ledger.",
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
             }
 

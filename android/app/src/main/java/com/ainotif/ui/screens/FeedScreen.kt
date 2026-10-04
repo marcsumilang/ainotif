@@ -58,21 +58,23 @@ fun FeedScreen(
 
     // Defensive UI deduplication: remove exact duplicate rows if any exist in the database
     val distinctTransactions = remember(transactions) {
-        transactions.distinctBy { tx ->
-            val timeBucket = tx.timestamp / 300000L
-            "${tx.amount}|${tx.currency}|${tx.merchant.trim().lowercase()}|${tx.type}|$timeBucket"
-        }
+        transactions.distinctBy { it.id }
     }
 
     // Multi-currency normalized totals in user's base currency
     val totalDebit = remember(distinctTransactions, baseCurrency) {
         distinctTransactions.filter { it.type == "DEBIT" }.sumOf {
-            CurrencyConverter.convert(it.amount, it.currency, baseCurrency)
+            CurrencyConverter.convert(it.amount, it.currency, baseCurrency) ?: 0.0
         }
     }
     val totalCredit = remember(distinctTransactions, baseCurrency) {
         distinctTransactions.filter { it.type == "CREDIT" }.sumOf {
-            CurrencyConverter.convert(it.amount, it.currency, baseCurrency)
+            CurrencyConverter.convert(it.amount, it.currency, baseCurrency) ?: 0.0
+        }
+    }
+    val unconvertedCount = remember(distinctTransactions, baseCurrency) {
+        distinctTransactions.count {
+            it.type in setOf("DEBIT", "CREDIT") && CurrencyConverter.convert(it.amount, it.currency, baseCurrency) == null
         }
     }
 
@@ -230,6 +232,13 @@ fun FeedScreen(
                         color = com.ainotif.ui.theme.WiseLimeVoltage,
                         letterSpacing = (-1).sp
                     )
+                    if (unconvertedCount > 0) {
+                        Text(
+                            "$unconvertedCount transaction(s) excluded: no $baseCurrency conversion rate is available.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = com.ainotif.ui.theme.WiseLimeVoltage
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(14.dp))
                     HorizontalDivider(color = com.ainotif.ui.theme.WisePaper.copy(alpha = 0.15f))
@@ -584,7 +593,8 @@ fun TransactionItemCard(
                 if (!tx.currency.equals(baseCurrency, ignoreCase = true)) {
                     val converted = CurrencyConverter.convert(tx.amount, tx.currency, baseCurrency)
                     Text(
-                        text = "≈ ${CurrencyConverter.format(converted, baseCurrency)}",
+                        text = converted?.let { "≈ ${CurrencyConverter.format(it, baseCurrency)}" }
+                            ?: "No conversion rate",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                         fontSize = 11.sp

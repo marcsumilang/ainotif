@@ -32,14 +32,14 @@ object CurrencyConverter {
 
     val SUPPORTED_CURRENCIES = listOf("USD", "EUR", "GBP", "PHP", "CAD", "AUD", "JPY", "INR", "SGD")
 
-    fun convert(amount: Double, fromCurrency: String, toCurrency: String): Double {
+    fun convert(amount: Double, fromCurrency: String, toCurrency: String): Double? {
         if (fromCurrency.equals(toCurrency, ignoreCase = true)) return amount
 
         val fromUpper = fromCurrency.uppercase()
         val toUpper = toCurrency.uppercase()
 
-        val fromRateInUsd = RATES_TO_USD[fromUpper] ?: 1.0
-        val toRateInUsd = RATES_TO_USD[toUpper] ?: 1.0
+        val fromRateInUsd = RATES_TO_USD[fromUpper] ?: return null
+        val toRateInUsd = RATES_TO_USD[toUpper] ?: return null
 
         // Amount in USD = amount * fromRateInUsd
         // Amount in Target = (amount in USD) / toRateInUsd

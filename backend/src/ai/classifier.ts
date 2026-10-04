@@ -106,7 +106,7 @@ export function extractAmountCandidates(text: string): AmountCandidate[] {
 }
 export function extractMerchantCandidates(text: string): MerchantCandidate[] {
   const candidates: MerchantCandidate[] = [];
-  const rx = /\b(?:at|from|to|sa|kay)\s+([\p{L}\p{N}][\p{L}\p{N}\s'’&.-]{0,100}?)(?=\s+(?:on|for|using|with|via|has|was|is|card|balance)\b|[.!;,](?:\s|$)|\s*[$€£₱₹¥]|$)/giu;
+  const rx = /\b(?:at|from|to|sa|kay)\s+([\p{L}\p{N}][\p{L}\p{N}\s'’&.*-]{0,100}?)(?=\s+(?:on|for|using|with|via|has|was|is|card|balance)\b|[.!;,](?:\s|$)|\s*[$€£₱₹¥]|$)/giu;
   for (const match of text.matchAll(rx)) {
     const span = match[1].trim();
     const start = match.index! + match[0].indexOf(match[1]);
@@ -114,6 +114,9 @@ export function extractMerchantCandidates(text: string): MerchantCandidate[] {
     candidates.push({ id: `merchant_${candidates.length}`, span, start, end: start + span.length, context: contextOf(text, start, start + span.length) });
   }
   return candidates.slice(0, 32);
+}
+function normalizeMerchantName(span: string): string {
+  return span.replace(/^\s*(?:SQ|SQUARE|STRIPE|PAYPAL)\s*\*\s*/i, "").trim();
 }
 const KNOWN_DOMAINS = ["chase.com", "revolut.com", "monzo.com", "wise.com", "venmo.com", "paypal.com", "gcash.com", "wellsfargo.com", "bankofamerica.com", "citi.com", "capitalone.com"];
 const SHORTENERS = ["bit.ly", "tinyurl.com", "t.co", "is.gd", "cutt.ly", "rb.gy", "goo.gl", "tiny.cc"];
@@ -256,7 +259,7 @@ export function composeJevResult(payload: NotificationPayload, rawResponse: unkn
   if (categoryRule) r.decision.suggestCategory = true;
   if (amount && direction.choice !== "UNKNOWN") {
     r.transaction = TransactionSchema.parse({ amount: amount.amount, currency: amount.currency,
-      merchant: merchant && reliable(merchantAnswer) ? merchant.span : "Unknown merchant",
+      merchant: merchant && reliable(merchantAnswer) ? normalizeMerchantName(merchant.span) : "Unknown merchant",
       category: categoryRule?.category ?? (r.decision.suggestCategory ? category.choice : "General"), type: direction.choice });
   }
   const reasons = [

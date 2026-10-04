@@ -9,7 +9,8 @@ export interface ResolvedAuth {
 
 export async function getAuthenticatedUser(req?: NextRequest): Promise<ResolvedAuth | null> {
   const clerkSecretKey = process.env.CLERK_SECRET_KEY;
-  const isDevMock = process.env.DEV_MOCK_AUTH === "true" || !clerkSecretKey;
+  // Missing production credentials must fail closed; only an explicit local flag enables mock identities.
+  const isDevMock = process.env.DEV_MOCK_AUTH === "true";
 
   // 1. Check Next.js Clerk cookie session (Web UI client)
   try {

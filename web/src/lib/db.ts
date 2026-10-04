@@ -315,6 +315,7 @@ export async function saveTransaction(data: {
           eq(schema.transactions.amount, data.amount),
           eq(schema.transactions.currency, data.currency),
           eq(schema.transactions.type, data.type),
+          eq(schema.transactions.rawNotification, data.rawNotification),
           gte(schema.transactions.timestamp, fiveMinBefore),
           lte(schema.transactions.timestamp, fiveMinAfter)
         ),
@@ -354,6 +355,7 @@ export async function saveTransaction(data: {
   const existing = memoryStore.transactions.find((t) =>
     t.userId === data.userId &&
     t.merchant.toLowerCase() === data.merchant.toLowerCase() &&
+    t.rawNotification === data.rawNotification &&
     t.currency === data.currency &&
       t.type === data.type &&
       Math.abs(t.amount - data.amount) < 0.001 &&

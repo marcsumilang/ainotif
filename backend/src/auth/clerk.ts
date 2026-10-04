@@ -16,7 +16,8 @@ declare module "hono" {
 export async function clerkAuthMiddleware(c: Context, next: Next) {
   const clerkSecretKey = (c.env as any)?.CLERK_SECRET_KEY || process.env.CLERK_SECRET_KEY;
   const devMockAuthEnv = (c.env as any)?.DEV_MOCK_AUTH ?? process.env.DEV_MOCK_AUTH;
-  const isDevMock = devMockAuthEnv === "true" || !clerkSecretKey;
+  // Missing production credentials must fail closed; only an explicit local flag enables mock identities.
+  const isDevMock = devMockAuthEnv === "true";
 
   const authHeader = c.req.header("Authorization");
   const token = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;

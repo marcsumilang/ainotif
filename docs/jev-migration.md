@@ -14,6 +14,7 @@ Eight independent judgments cover completed movement, phishing, credential reque
 2. Set server-only `TYPESAFE_API_KEY` and `TYPESAFE_MODEL` in `backend/.env` and `web/.env.local`. Local web settings have been populated from the existing backend TypeSafe settings. Never use a `NEXT_PUBLIC_` key. For Workers, set `TYPESAFE_API_KEY` with Wrangler secrets in **each** project; the model is a normal Worker variable.
 3. Before using Neon, apply `backend/migrations/0001_notification_analyses.sql` once to the database shared by both servers. This adds a table and index; existing ledger records are unchanged. The migration has not been applied to a live database by this task.
 4. Install the updated Android app before deploying/enabling the Jev server behavior. Older APKs do not understand the new action policy and can still hide alerts automatically.
+5. Keep `DEV_MOCK_AUTH=false` in both deployed Worker configurations. Mock identities are only enabled by an explicit local setting; missing Clerk secrets no longer switch either API into demo authentication. Set `CLERK_SECRET_KEY` as a server-side secret in both deployments before enabling authenticated traffic.
 
 `TYPESAFE_MODEL=jev-latest` follows an alias; resolved model, question version, policy version, probabilities, usage and latency are stored with each non-sensitive analysis. Pin the model for repeatable evaluations. HTTP failures use a labeled heuristic fallback; provider error bodies are not logged.
 
@@ -23,6 +24,7 @@ Eight independent judgments cover completed movement, phishing, credential reque
 - A category suggestion has a separate probability/confidence gate (0.70/0.65). Uncertain categories become General. An explicit user merchant rule overrides the category in code.
 - Phishing ≥0.85 or credential disclosure ≥0.90 creates a warning, without a transaction. Intermediate threat judgments and uncertain financial fields require review.
 - Hiding is disabled for this milestone, including offline warnings. Android requires explicit server action decisions and rejects legacy, contradictory, and invalid financial results.
+- The ledger retains the original amount when a currency lacks a configured conversion rate. Web and Android exclude that transaction from converted summaries and show an unavailable-rate notice; they never assume an unknown currency equals USD.
 - Unconfigured/unavailable Jev never adds a fallback financial result to the ledger. Offline messages are retained in Android's audit log with REVIEW; online review records appear in the dashboard's Notifications to review panel and `GET /api/notification-reviews`.
 - Review is inspection-only in this milestone. The pipeline does not automatically accept a proposed amount. No automatic approval or reprocessing of historical review entries is provided.
 - Credential messages are discarded before inference, quota counting, and server persistence. Device logs redact both title and body. New retained analyses are removed during account deletion and by the database user cascade.
@@ -57,6 +59,11 @@ Manual tester checklist after applying the SQL and starting the servers:
 8. Remove the TypeSafe key or simulate 429/529/network failure. Expect labeled fallback, review-only financial handling, and a visible original notification. Restore the key afterward.
 9. Sign in as two test users from your environment configuration. Processing and review retrieval must remain owner-scoped even if body/query `userId` names the other user. Delete an account and verify its review records are removed.
 10. On Android, verify the original scam notification stays visible even with an old auto-hide preference enabled. Offline-only financial messages must appear in Settings' audit log as REVIEW, without changing financial totals.
+11. Send `You spent $14.50 at SQ *BLUE BOTTLE COFFEE on card 8812.` and `You spent $14.50 at SQ *STARBUCKS on card 8812.` for the same account and timestamp. They must create separate transactions named Blue Bottle Coffee and Starbucks; retry either exact notification and confirm its transaction ID is reused.
+12. Add HKD, CHF, and NZD transactions while the base currency is USD. Confirm the original amounts stay visible, those records are excluded from USD summaries, and the web and Android notices identify the missing conversion rate.
+13. With `DEV_MOCK_AUTH=false`, verify missing Clerk configuration returns an auth failure and mock tokens do not authenticate. Confirm both Wrangler configs keep that setting false before deployment.
+
+Automated unit/build checks and browser/device acceptance have not been run for these follow-up changes. Run the documented backend, web, and Android commands after implementation review. Ask for approval before using a browser harness.
 
 ## Labeled model evaluation
 
