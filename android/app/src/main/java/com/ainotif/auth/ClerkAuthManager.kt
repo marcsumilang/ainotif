@@ -27,28 +27,30 @@ class ClerkAuthManager(context: Context) {
 
         return when {
             token != null && userId != null -> UserState.SignedIn(userId, email ?: "", token)
-            else -> UserState.DemoUser("user_demo_mobile", "mock_user_alice")
+            prefs.getBoolean(KEY_DEMO_MODE, false) -> UserState.DemoUser("user_demo_mobile", "mock_user_alice")
+            else -> UserState.SignedOut
         }
     }
 
-    fun getAuthToken(): String {
+    fun getAuthToken(): String? {
         return when (val state = _userState.value) {
             is UserState.SignedIn -> state.token
             is UserState.DemoUser -> state.token
-            UserState.SignedOut -> "mock_user_alice"
+            UserState.SignedOut -> null
         }
     }
 
-    fun getUserId(): String {
+    fun getUserId(): String? {
         return when (val state = _userState.value) {
             is UserState.SignedIn -> state.userId
             is UserState.DemoUser -> state.userId
-            UserState.SignedOut -> "user_demo_mobile"
+            UserState.SignedOut -> null
         }
     }
 
     fun setSession(userId: String, email: String, token: String) {
         prefs.edit()
+            .remove(KEY_DEMO_MODE)
             .putString("clerk_jwt", token)
             .putString("clerk_user_id", userId)
             .putString("clerk_email", email)
@@ -57,7 +59,10 @@ class ClerkAuthManager(context: Context) {
     }
 
     fun setDemoMode() {
-        prefs.edit().clear().apply()
+        prefs.edit()
+            .clear()
+            .putBoolean(KEY_DEMO_MODE, true)
+            .apply()
         _userState.value = UserState.DemoUser("user_demo_mobile", "mock_user_alice")
     }
 
@@ -105,5 +110,9 @@ class ClerkAuthManager(context: Context) {
      */
     fun launchClerkSignUp(context: Context, webBaseUrl: String) {
         launchClerkSignIn(context, webBaseUrl, mode = "signup")
+    }
+
+    private companion object {
+        const val KEY_DEMO_MODE = "demo_mode"
     }
 }

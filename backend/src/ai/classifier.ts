@@ -2,8 +2,8 @@ import { z } from "zod";
 
 // Shared server-only pipeline, also imported by Next's API route.
 // HTTP contract: https://docs.typesafe.ai/api (POST /v1/systemone).
-export const QUESTION_VERSION = "notification-jev-v2";
-export const POLICY_VERSION = "notification-actions-v1";
+export const QUESTION_VERSION = "notification-jev-v3";
+export const POLICY_VERSION = "notification-actions-v2";
 export const CATEGORIES = ["Food & Dining", "Groceries", "Shopping", "Transport & Travel", "Bills & Utilities", "Entertainment", "Health", "Transfers", "Income", "General"] as const;
 export const CURRENCIES = ["USD", "EUR", "GBP", "PHP", "JPY", "INR", "CAD", "AUD", "SGD", "NZD", "CHF", "HKD"] as const;
 export const ProcessNotificationSchema = z.object({
@@ -32,7 +32,7 @@ export const TransactionSchema = z.object({
   type: z.enum(["DEBIT", "CREDIT", "TRANSFER"]),
 });
 export const ClassificationResultSchema = z.object({
-  classification: z.enum(["TRANSACTION", "SCAM_PHISHING", "IRRELEVANT", "IGNORED_OTP", "REVIEW"]),
+  classification: z.enum(["TRANSACTION", "SCAM_PHISHING", "IRRELEVANT", "REMINDER", "IGNORED_OTP", "REVIEW"]),
   isScamOrPhishing: z.boolean(), riskScore: z.number().int().min(0).max(100),
   scamReason: z.string().nullable(), scamIndicators: z.array(z.string()), transaction: TransactionSchema.nullable(),
   confidence: probability, // Legacy display only, never an action threshold.
@@ -51,6 +51,7 @@ export const ClassificationResultSchema = z.object({
   const bad = (message: string) => ctx.addIssue({ code: z.ZodIssueCode.custom, message });
   if (r.classification === "TRANSACTION" && (!r.transaction || r.isScamOrPhishing)) bad("Transaction classification requires consistent financial fields");
   if (r.classification !== "TRANSACTION" && r.classification !== "REVIEW" && r.transaction) bad("Only transaction or review results can have financial fields");
+  if (r.classification === "REMINDER" && (r.transaction || r.decision.saveTransaction || r.decision.requiresReview)) bad("Reminder results cannot create transactions or require transaction review");
   if (r.isScamOrPhishing !== (r.classification === "SCAM_PHISHING")) bad("Scam flag and classification disagree");
   if (r.decision.saveTransaction && (r.classification !== "TRANSACTION" || r.decision.requiresReview || r.diagnostics.engine !== "jev")) bad("Uncertain or fallback results cannot save transactions");
   if (r.decision.warn !== r.isScamOrPhishing) bad("Warning and scam classification disagree");
@@ -106,17 +107,24 @@ export function extractAmountCandidates(text: string): AmountCandidate[] {
 }
 export function extractMerchantCandidates(text: string): MerchantCandidate[] {
   const candidates: MerchantCandidate[] = [];
-  const rx = /\b(?:at|from|to|sa|kay)\s+([\p{L}\p{N}][\p{L}\p{N}\s'’&.*-]{0,100}?)(?=\s+(?:on|for|using|with|via|has|was|is|card|balance)\b|[.!;,](?:\s|$)|\s*[$€£₱₹¥]|$)/giu;
+  const rx = /\b(?:at|from|to|sa|kay)\s+([\p{L}\p{N}][\p{L}\p{N}\s'’&.*-]{0,100}?)(?=\s+(?:on|for|using|with|via|has|was|is|card|balance|make|pay|keep|fund|log|sign|open|visit|check|view|use|review|access|download|settle)\b|[.!;,](?:\s|$)|\s*[$€£₱₹¥]|$)/giu;
   for (const match of text.matchAll(rx)) {
     const span = match[1].trim();
     const start = match.index! + match[0].indexOf(match[1]);
-    if (!span || /^(?:your|my|this|the)\b/i.test(span)) continue;
+    if (!span || /^(?:your|my|this|the|a|an|make|pay|keep|fund|log|sign|open|visit|check|view|use|review|access|download|settle)\b/i.test(span)) continue;
     candidates.push({ id: `merchant_${candidates.length}`, span, start, end: start + span.length, context: contextOf(text, start, start + span.length) });
   }
   return candidates.slice(0, 32);
 }
 function normalizeMerchantName(span: string): string {
   return span.replace(/^\s*(?:SQ|SQUARE|STRIPE|PAYPAL)\s*\*\s*/i, "").trim();
+}
+const REMINDER_PATTERNS = [
+  /\b(?:e-?soa|statement (?:is )?(?:available|ready)|(?:credit|card) statement|total due|min(?:imum)? due|min(?:imum)? amount due|amount due|due by|payment due|overdue payment|missed payment|payment reminder|reminder to pay|upcoming payment|scheduled payment)\b/i,
+  /\b(?:below (?:the )?minimum balance requirement|below minimum balance|maintaining balance|recurring service charges? (?:will|may) continue|charge applies if|charge if below minimum|fund your account|keep your account in good standing)\b/i,
+];
+export function isPaymentReminder(text: string): boolean {
+  return REMINDER_PATTERNS.some((pattern) => pattern.test(text));
 }
 const KNOWN_DOMAINS = ["chase.com", "revolut.com", "monzo.com", "wise.com", "venmo.com", "paypal.com", "gcash.com", "wellsfargo.com", "bankofamerica.com", "citi.com", "capitalone.com"];
 const SHORTENERS = ["bit.ly", "tinyurl.com", "t.co", "is.gd", "cutt.ly", "rb.gy", "goo.gl", "tiny.cc"];
@@ -153,7 +161,7 @@ export function buildJevRequest(payload: NotificationPayload, model = "jev-lates
   const questions: Record<string, Question> = {
     completed: { type: "noul", instructions: "Does `notification.text` SAY a financial transaction already happened? Judge what the message reports, not whether the sender is authentic or the event can be independently verified.", criteria: {
       true: "Reports money paid, spent, debited, withdrawn, received, deposited, credited, transferred, or already refunded. For example: 'Paid PHP 1,250 at SM', 'You spent $42.50', 'You transferred PHP 1,000', 'Refund credited'. A balance included alongside a completed payment does not negate that payment.",
-      false: "Only an offer, promotion, balance, credit limit, quoted fee, request to pay, future payment, pending authorization, declined or failed payment, chat, or security alert. For example: 'Get $50 cashback when you sign up', 'Available balance $500', 'Payment declined', 'Pending authorization'.",
+      false: "Only an offer, promotion, balance, credit limit, quoted fee, request to pay, future payment, pending authorization, declined or failed payment, chat, or security alert. A card eSOA or statement with a total/minimum due and due date, an overdue or missed-loan-payment notice asking the recipient to pay, and a low-balance notice describing conditional future service charges are reminders, not completed transactions. Amounts due, quoted fees and possible future charges are not money movements. For example: 'Get $50 cashback when you sign up', 'Available balance $500', 'Payment declined', 'Pending authorization', or 'Your statement is available; PHP 500 is due by Friday'.",
     } },
     phishing: { type: "noul", instructions: "Does `notification.text` appear to be phishing or a scam? Use `urls` as parsed hostname evidence. A routine security alert telling the user to open their bank app is not by itself phishing. The source package or a bank name in text does not verify identity. Unknown domains alone do not establish fraud. Evaluate lures, threats, deceptive links and demands together." },
     credentials: { type: "noul", instructions: "Does `notification.text` ask the recipient to disclose or enter credentials to another person or an unverified destination? A reminder not to disclose credentials is not a disclosure request." },
@@ -197,6 +205,12 @@ export function fallbackHeuristicClassifier(text: string, _packageName?: string)
     r.scamIndicators = ["Unverified or deceptive link", "Action lure", ...(pressure ? ["Coercive pressure"] : [])];
     r.scamReason = "Rule-based warning: deceptive link combined with an action lure.";
     r.decision.warn = true;
+  }
+  if (!r.isScamOrPhishing && isPaymentReminder(text)) {
+    r.classification = "REMINDER";
+    r.explanation = "Payment reminder or statement notice; no completed money movement is reported.";
+    r.decision.reasons = ["payment_reminder"];
+    return ClassificationResultSchema.parse(r);
   }
   const financial = /\b(?:paid|spent|sent|charged|debit|received|refunded|credited|debited|transferred|withdrawn|payment|purchase|deposit|nagbayad|nakareceive)\b/i.test(text);
   if (r.isScamOrPhishing || (financial && extractAmountCandidates(text).length > 0) || (lure && urls.length > 0)) {
@@ -244,6 +258,12 @@ export function composeJevResult(payload: NotificationPayload, rawResponse: unkn
   if (phishing >= POLICY.reviewThreat || credentials >= POLICY.reviewThreat) {
     r.classification = "REVIEW"; r.decision.requiresReview = true; r.decision.reasons = ["uncertain_threat"];
     r.explanation = "Possible threat needs review before recording financial data.";
+    return ClassificationResultSchema.parse(r);
+  }
+  if (isPaymentReminder(fullTextOf(payload))) {
+    r.classification = "REMINDER";
+    r.explanation = "Payment reminder or statement notice; no completed money movement is reported.";
+    r.decision.reasons = ["payment_reminder"];
     return ClassificationResultSchema.parse(r);
   }
   const completed = noul("completed");

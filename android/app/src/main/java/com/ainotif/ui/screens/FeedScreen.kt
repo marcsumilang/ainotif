@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ainotif.data.local.CategoryRulesManager
 import com.ainotif.data.local.entity.TransactionEntity
+import com.ainotif.data.repository.AuthenticationRequiredException
 import com.ainotif.data.repository.TransactionRepository
 import com.ainotif.service.AiNotificationListenerService
 import com.ainotif.util.CurrencyConverter
@@ -142,10 +143,23 @@ fun FeedScreen(
                         onClick = {
                             coroutineScope.launch {
                                 isSyncing = true
-                                val activeCount = AiNotificationListenerService.scanActiveNotifications()
-                                repository.syncWithBackend()
-                                isSyncing = false
-                                val msg = if (activeCount > 0) "Captured $activeCount active items + synced" else "Sync complete"
+                                val syncState = try {
+                                    val activeCount = AiNotificationListenerService.scanActiveNotifications()
+                                    activeCount to repository.syncWithBackend()
+                                } finally {
+                                    isSyncing = false
+                                }
+                                val activeCount = syncState.first
+                                val syncResult = syncState.second
+                                val msg = when {
+                                    syncResult.isSuccess && activeCount > 0 -> "Captured $activeCount active items + synced"
+                                    syncResult.isSuccess -> "Sync complete"
+                                    syncResult.exceptionOrNull() is AuthenticationRequiredException && activeCount > 0 ->
+                                        "Captured $activeCount items locally. Sign in to sync cloud data"
+                                    syncResult.exceptionOrNull() is AuthenticationRequiredException ->
+                                        "Sign in to sync cloud data"
+                                    else -> "Sync failed. Check your connection and try again"
+                                }
                                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                             }
                         }

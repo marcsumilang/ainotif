@@ -30,6 +30,8 @@ sealed class ProcessNotificationOutcome {
     data class ReviewRequired(val reason: String) : ProcessNotificationOutcome()
 }
 
+class AuthenticationRequiredException : IllegalStateException("Sign in to sync cloud data")
+
 class TransactionRepository(
     private val db: AppDatabase,
     private val apiClient: AiNotifApiClient,
@@ -111,11 +113,11 @@ class TransactionRepository(
                 )
 
                 // If offline-only mode is selected, directly run on-device heuristic engine
-                if (preferencesManager.isOfflineOnly.value) {
+                val token = authManager.getAuthToken()
+                if (preferencesManager.isOfflineOnly.value || token == null) {
                     return processLocally(title, text, packageName, timestamp)
                 }
 
-                val token = authManager.getAuthToken()
                 val request = ProcessNotificationRequest(
                     text = text.orEmpty(),
                     title = title,
@@ -179,10 +181,10 @@ class TransactionRepository(
                     )
                 )
 
-                if (forceLocal || preferencesManager.isOfflineOnly.value) {
+                val token = authManager.getAuthToken()
+                if (forceLocal || preferencesManager.isOfflineOnly.value || token == null) {
                     processLocally(title, text, packageName, timestamp)
                 } else {
-                    val token = authManager.getAuthToken()
                     val request = ProcessNotificationRequest(
                         text = text.orEmpty(),
                         title = title,
@@ -294,8 +296,8 @@ class TransactionRepository(
 
     suspend fun updateTransaction(tx: TransactionEntity): Result<Unit> = runCatching {
         db.transactionDao().updateTransaction(tx)
-        if (!preferencesManager.isOfflineOnly.value) {
-            val token = authManager.getAuthToken()
+        val token = authManager.getAuthToken()
+        if (!preferencesManager.isOfflineOnly.value && token != null) {
             apiClient.updateTransaction(
                 txId = tx.id,
                 update = UpdateTransactionDto(
@@ -311,8 +313,8 @@ class TransactionRepository(
 
     suspend fun deleteTransaction(id: String): Result<Unit> = runCatching {
         db.transactionDao().deleteById(id)
-        if (!preferencesManager.isOfflineOnly.value) {
-            val token = authManager.getAuthToken()
+        val token = authManager.getAuthToken()
+        if (!preferencesManager.isOfflineOnly.value && token != null) {
             apiClient.deleteTransaction(id, token)
         }
     }
@@ -325,6 +327,7 @@ class TransactionRepository(
 
     suspend fun syncWithBackend(): Result<Unit> = runCatching {
         val token = authManager.getAuthToken()
+            ?: throw AuthenticationRequiredException()
 
         // 1. Push any local unsynced transactions to backend
         val unsyncedTxs = db.transactionDao().getUnsyncedTransactions()
@@ -342,66 +345,62 @@ class TransactionRepository(
                     timestamp = tx.timestamp
                 ),
                 token
-            ).getOrDefault(false)
+            ).getOrThrow()
             if (created) {
                 db.transactionDao().markSynced(tx.id)
             }
         }
 
         // 2. Fetch remote transactions and reconcile with local transactions
-        val remoteTxs = apiClient.fetchTransactions(token).getOrNull()
-        if (remoteTxs != null) {
-            val entities = mutableListOf<TransactionEntity>()
-            for (dto in remoteTxs) {
-                val parsedTime = parseTimestamp(dto.timestamp)
-                val existingLocal = db.transactionDao().findMatchingTransaction(
-                    rawNotification = dto.rawNotification,
+        val remoteTxs = apiClient.fetchTransactions(token).getOrThrow()
+        val entities = mutableListOf<TransactionEntity>()
+        for (dto in remoteTxs) {
+            val parsedTime = parseTimestamp(dto.timestamp)
+            val existingLocal = db.transactionDao().findMatchingTransaction(
+                rawNotification = dto.rawNotification,
+                amount = dto.amount,
+                currency = dto.currency,
+                merchant = dto.merchant,
+                timestamp = parsedTime,
+                toleranceMs = 300000L
+            )
+            if (existingLocal != null && existingLocal.id != dto.id) {
+                db.transactionDao().deleteById(existingLocal.id)
+            }
+
+            entities.add(
+                TransactionEntity(
+                    id = dto.id,
                     amount = dto.amount,
                     currency = dto.currency,
                     merchant = dto.merchant,
-                    timestamp = parsedTime,
-                    toleranceMs = 300000L
-                )
-                if (existingLocal != null && existingLocal.id != dto.id) {
-                    db.transactionDao().deleteById(existingLocal.id)
-                }
-
-                entities.add(
-                    TransactionEntity(
-                        id = dto.id,
-                        amount = dto.amount,
-                        currency = dto.currency,
-                        merchant = dto.merchant,
-                        category = categoryRulesManager.applyCustomRules(dto.merchant, dto.category),
-                        type = dto.type,
-                        rawNotification = dto.rawNotification,
-                        sourcePackage = dto.sourcePackage,
-                        timestamp = parsedTime,
-                        isSynced = true
-                    )
-                )
-            }
-            db.transactionDao().insertAll(entities)
-        }
-
-        // 3. Fetch remote alerts
-        val remoteAlerts = apiClient.fetchAlerts(token).getOrNull()
-        if (remoteAlerts != null) {
-            val entities = remoteAlerts.map { dto ->
-                AlertEntity(
-                    id = dto.id,
+                    category = categoryRulesManager.applyCustomRules(dto.merchant, dto.category),
+                    type = dto.type,
                     rawNotification = dto.rawNotification,
                     sourcePackage = dto.sourcePackage,
-                    riskScore = dto.riskScore,
-                    reason = dto.reason,
-                    phishingCues = dto.phishingCues ?: "",
-                    timestamp = parseTimestamp(dto.timestamp),
-                    isDismissed = dto.isDismissed,
+                    timestamp = parsedTime,
                     isSynced = true
                 )
-            }
-            db.alertDao().insertAll(entities)
+            )
         }
+        db.transactionDao().insertAll(entities)
+
+        // 3. Fetch remote alerts
+        val remoteAlerts = apiClient.fetchAlerts(token).getOrThrow()
+        val alertEntities = remoteAlerts.map { dto ->
+            AlertEntity(
+                id = dto.id,
+                rawNotification = dto.rawNotification,
+                sourcePackage = dto.sourcePackage,
+                riskScore = dto.riskScore,
+                reason = dto.reason,
+                phishingCues = dto.phishingCues ?: "",
+                timestamp = parseTimestamp(dto.timestamp),
+                isDismissed = dto.isDismissed,
+                isSynced = true
+            )
+        }
+        db.alertDao().insertAll(alertEntities)
 
         // 4. Run local database deduplication to clean up any duplicate items
         deduplicateLocalRecords()
@@ -465,7 +464,7 @@ class TransactionRepository(
 
     suspend fun dismissAlert(alertId: String): Result<Boolean> {
         db.alertDao().dismissAlert(alertId)
-        val token = authManager.getAuthToken()
+        val token = authManager.getAuthToken() ?: return Result.success(false)
         return apiClient.dismissAlert(alertId, token)
     }
 
@@ -478,6 +477,7 @@ class TransactionRepository(
 
     suspend fun fetchStats(): Result<StatsResponse> {
         val token = authManager.getAuthToken()
+            ?: return Result.failure(AuthenticationRequiredException())
         return apiClient.fetchStats(token)
     }
 }

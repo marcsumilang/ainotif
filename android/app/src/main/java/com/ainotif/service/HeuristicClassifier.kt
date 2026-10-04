@@ -10,7 +10,12 @@ object HeuristicClassifier {
     private val domains = listOf("chase.com", "revolut.com", "monzo.com", "wise.com", "venmo.com", "paypal.com", "gcash.com", "wellsfargo.com", "bankofamerica.com", "citi.com", "capitalone.com")
     private val shorteners = listOf("bit.ly", "tinyurl.com", "t.co", "is.gd", "cutt.ly", "rb.gy", "goo.gl", "tiny.cc")
     private val urlPattern = Regex("""https?://[^\s<>"']+|\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?:/[^\s<>"']*)?""", RegexOption.IGNORE_CASE)
+    private val reminderPatterns = listOf(
+        Regex("""\b(?:e-?soa|statement (?:is )?(?:available|ready)|(?:credit|card) statement|total due|min(?:imum)? due|min(?:imum)? amount due|amount due|due by|payment due|overdue payment|missed payment|payment reminder|reminder to pay|upcoming payment|scheduled payment)\b""", RegexOption.IGNORE_CASE),
+        Regex("""\b(?:below (?:the )?minimum balance requirement|below minimum balance|maintaining balance|recurring service charges? (?:will|may) continue|charge applies if|charge if below minimum|fund your account|keep your account in good standing)\b""", RegexOption.IGNORE_CASE)
+    )
     private fun matches(host: String, domain: String) = host == domain || host.endsWith(".$domain")
+    private fun isPaymentReminder(text: String) = reminderPatterns.any { it.containsMatchIn(text) }
 
     fun classify(title: String?, text: String?, packageName: String?): AiAnalysisResult {
         val fullText = "${title.orEmpty()} ${text.orEmpty()}".trim()
@@ -35,6 +40,17 @@ object HeuristicClassifier {
         val lure = Regex("""\b(?:verify|confirm|click|tap|claim|log\s?in|sign\s?in|unlock|update)\b""", RegexOption.IGNORE_CASE).containsMatchIn(fullText)
         val pressure = Regex("""\b(?:suspended|locked|deactivated|urgent|immediately|final\s+notice)\b""", RegexOption.IGNORE_CASE).containsMatchIn(fullText)
         val warn = deceptive && lure && (pressure || lookalike)
+        if (!warn && isPaymentReminder(fullText)) {
+            return AiAnalysisResult(
+                classification = "REMINDER",
+                isScamOrPhishing = false,
+                riskScore = 0,
+                confidence = 0.0,
+                explanation = "Payment reminder or statement notice; no completed money movement is reported.",
+                decision = AiActionDecision(reasons = listOf("payment_reminder")),
+                diagnostics = AiDiagnostics("heuristic")
+            )
+        }
         val financial = Regex("""\b(?:paid|spent|sent|charged|debit|received|refunded|credited|debited|transferred|withdrawn|payment|purchase|deposit|nagbayad|nakareceive)\b""", RegexOption.IGNORE_CASE).containsMatchIn(fullText)
         val amount = Regex("""(?:USD|EUR|GBP|PHP|JPY|INR|CAD|AUD|SGD|NZD|CHF|HKD|[$€£₱₹¥])\s*\d|\d\s*(?:USD|EUR|GBP|PHP|JPY|INR|CAD|AUD|SGD|NZD|CHF|HKD)""", RegexOption.IGNORE_CASE).containsMatchIn(fullText)
         val review = warn || (financial && amount) || (lure && urls.isNotEmpty())
