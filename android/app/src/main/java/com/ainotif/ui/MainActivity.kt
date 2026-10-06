@@ -33,7 +33,6 @@ import com.ainotif.ui.screens.SettingsScreen
 import com.ainotif.ui.screens.SplashScreen
 import com.ainotif.ui.screens.StatsScreen
 import com.ainotif.ui.theme.AiNotifTheme
-import io.sentry.Sentry
 
 sealed class Screen(val route: String, val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     object Feed : Screen("feed", "Feed", Icons.Default.ReceiptLong)
@@ -44,17 +43,14 @@ sealed class Screen(val route: String, val title: String, val icon: androidx.com
 
 class MainActivity : FragmentActivity() {
 
+    companion object {
+        /** Deep-link destination requested via notification taps (feed/alerts). */
+        val navigateRequests = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
-    // waiting for view to draw to better represent a captured error with a screenshot
-    findViewById<android.view.View>(android.R.id.content).viewTreeObserver.addOnGlobalLayoutListener {
-      try {
-        throw Exception("This app uses Sentry! :)")
-      } catch (e: Exception) {
-        Sentry.captureException(e)
-      }
-    }
 
         enableEdgeToEdge()
         handleAuthIntent(intent)
@@ -131,6 +127,23 @@ class MainActivity : FragmentActivity() {
                     val currentRoute = navBackStackEntry?.destination?.route
 
                     val activeAlerts by repository.activeAlertsFlow.collectAsState(initial = emptyList())
+                    val navigateTo by navigateRequests.collectAsState()
+
+                    LaunchedEffect(navigateTo, navController) {
+                        val dest = navigateTo
+                        if (dest == Screen.Feed.route || dest == Screen.Alerts.route ||
+                            dest == Screen.Stats.route || dest == Screen.Settings.route
+                        ) {
+                            navController.navigate(dest) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                            navigateRequests.value = null
+                        }
+                    }
 
                     val items = listOf(
                         Screen.Feed,
@@ -233,6 +246,12 @@ class MainActivity : FragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleAuthIntent(intent)
+        handleNavigateIntent(intent)
+    }
+
+    private fun handleNavigateIntent(intent: Intent?) {
+        val dest = intent?.getStringExtra("navigate_to") ?: return
+        navigateRequests.value = dest
     }
 
     private fun handleAuthIntent(intent: Intent?) {

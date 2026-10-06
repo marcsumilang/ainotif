@@ -108,8 +108,10 @@ object SmsInboxImporter {
                 var dupCount = 0
                 var ignoredCount = 0
 
-                // Report initial progress
-                onProgress?.invoke(SmsProgress(0, total, 0, 0, 0, 0))
+                // Report initial progress on the main thread (Compose state).
+                withContext(Dispatchers.Main) {
+                    onProgress?.invoke(SmsProgress(0, total, 0, 0, 0, 0))
+                }
 
                 while (c.moveToNext()) {
                     current++
@@ -154,18 +156,19 @@ object SmsInboxImporter {
                         }
                     }
 
-                    // Update UI progress every 5 messages or on the last message
+                    // Update UI progress every 5 messages or on the last message (main thread).
                     if (current % 5 == 0 || current == total) {
-                        onProgress?.invoke(
-                            SmsProgress(
-                                current = current,
-                                total = total,
-                                transactions = txCount,
-                                alerts = alertCount,
-                                otpsDropped = otpCount,
-                                duplicates = dupCount
-                            )
+                        val snapshot = SmsProgress(
+                            current = current,
+                            total = total,
+                            transactions = txCount,
+                            alerts = alertCount,
+                            otpsDropped = otpCount,
+                            duplicates = dupCount
                         )
+                        withContext(Dispatchers.Main) {
+                            onProgress?.invoke(snapshot)
+                        }
                     }
                 }
 

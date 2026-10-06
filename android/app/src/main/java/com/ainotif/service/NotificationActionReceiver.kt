@@ -7,6 +7,7 @@ import android.content.Intent
 import com.ainotif.AiNotifApplication
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 class NotificationActionReceiver : BroadcastReceiver() {
@@ -21,9 +22,14 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 notificationManager.cancel(notifId)
             }
 
-            val repository = AiNotifApplication.instance.repository
-            CoroutineScope(Dispatchers.IO).launch {
-                repository.dismissAlert(alertId)
+            // Keep the broadcast alive until the dismiss completes.
+            val pending = goAsync()
+            CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                try {
+                    AiNotifApplication.instance.repository.dismissAlert(alertId)
+                } finally {
+                    pending.finish()
+                }
             }
         }
     }

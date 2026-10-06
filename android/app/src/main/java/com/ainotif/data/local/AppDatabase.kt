@@ -36,7 +36,9 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "ainotif_database"
                 )
-                    .fallbackToDestructiveMigration()
+                    // Never wipe the ledger on upgrade; provide explicit
+                    // Migration objects for schema changes instead.
+                    .fallbackToDestructiveMigrationOnDowngrade()
                     .build()
                 INSTANCE = instance
                 instance

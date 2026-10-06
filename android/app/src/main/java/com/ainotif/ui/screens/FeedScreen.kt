@@ -615,7 +615,8 @@ fun TransactionItemCard(
                     )
                 }
                 if (tx.sourcePackage != null) {
-                    val appName = tx.sourcePackage.substringAfterLast(".").uppercase()
+                    val appName = com.ainotif.service.AppFilterManager.KNOWN_APP_NAMES[tx.sourcePackage]
+                        ?: tx.sourcePackage.substringAfterLast(".").replaceFirstChar { it.uppercase() }
                     Text(
                         text = appName,
                         style = MaterialTheme.typography.labelSmall,

@@ -111,9 +111,11 @@ class TransactionRepository(
                         timestamp = timestamp
                     )
                 )
+                db.notificationLogDao().pruneOldLogs()
 
-                // If offline-only mode is selected, directly run on-device heuristic engine
-                val token = authManager.getAuthToken()
+                // Offline-only or signed-out (incl. demo) sessions never send mock
+                // bearers; they run the on-device heuristic engine.
+                val token = if (authManager.isSignedIn()) authManager.getAuthToken() else null
                 if (preferencesManager.isOfflineOnly.value || token == null) {
                     return processLocally(title, text, packageName, timestamp)
                 }
@@ -181,7 +183,7 @@ class TransactionRepository(
                     )
                 )
 
-                val token = authManager.getAuthToken()
+                val token = if (authManager.isSignedIn()) authManager.getAuthToken() else null
                 if (forceLocal || preferencesManager.isOfflineOnly.value || token == null) {
                     processLocally(title, text, packageName, timestamp)
                 } else {
@@ -355,7 +357,7 @@ class TransactionRepository(
         val remoteTxs = apiClient.fetchTransactions(token).getOrThrow()
         val entities = mutableListOf<TransactionEntity>()
         for (dto in remoteTxs) {
-            val parsedTime = parseTimestamp(dto.timestamp)
+            val parsedTime = parseTimestampOrNull(dto.timestamp) ?: continue
             val existingLocal = db.transactionDao().findMatchingTransaction(
                 rawNotification = dto.rawNotification,
                 amount = dto.amount,
@@ -379,15 +381,20 @@ class TransactionRepository(
                     rawNotification = dto.rawNotification,
                     sourcePackage = dto.sourcePackage,
                     timestamp = parsedTime,
+                    // Preserve locally edited notes across server syncs.
+                    note = existingLocal?.note?.takeIf { it.isNotBlank() },
                     isSynced = true
                 )
             )
         }
         db.transactionDao().insertAll(entities)
 
-        // 3. Fetch remote alerts
+        // 3. Fetch remote alerts (never overwrite a local dismissal)
         val remoteAlerts = apiClient.fetchAlerts(token).getOrThrow()
-        val alertEntities = remoteAlerts.map { dto ->
+        val localAlertsById = db.alertDao().getAllAlerts().associateBy { it.id }
+        val alertEntities = remoteAlerts.mapNotNull { dto ->
+            val parsedTime = parseTimestampOrNull(dto.timestamp) ?: return@mapNotNull null
+            val local = localAlertsById[dto.id]
             AlertEntity(
                 id = dto.id,
                 rawNotification = dto.rawNotification,
@@ -395,8 +402,8 @@ class TransactionRepository(
                 riskScore = dto.riskScore,
                 reason = dto.reason,
                 phishingCues = dto.phishingCues ?: "",
-                timestamp = parseTimestamp(dto.timestamp),
-                isDismissed = dto.isDismissed,
+                timestamp = parsedTime,
+                isDismissed = local?.isDismissed == true || dto.isDismissed,
                 isSynced = true
             )
         }
@@ -415,7 +422,10 @@ class TransactionRepository(
 
         for (tx in allTxs) {
             val timeBucket = tx.timestamp / 300000L
-            val key = "${tx.amount}|${tx.currency}|${tx.merchant.trim().lowercase()}|${tx.type}|$timeBucket"
+            // Include the source notification content so two distinct same-amount
+            // purchases in one window never collapse into one record.
+            val rawHash = tx.rawNotification.hashCode()
+            val key = "${tx.amount}|${tx.currency}|${tx.merchant.trim().lowercase()}|${tx.type}|$timeBucket|$rawHash"
             val existing = seen[key]
             if (existing != null) {
                 if (existing.isSynced && !tx.isSynced) {
@@ -437,9 +447,15 @@ class TransactionRepository(
     }
 
     private fun parseTimestamp(raw: String?): Long {
-        if (raw.isNullOrBlank()) return System.currentTimeMillis()
+        return parseTimestampOrNull(raw) ?: System.currentTimeMillis()
+    }
+
+    /** Null when the timestamp is missing or unparseable so callers can skip/quarantine. */
+    private fun parseTimestampOrNull(raw: String?): Long? {
+        if (raw.isNullOrBlank()) return null
         val rawNum = raw.toLongOrNull()
         if (rawNum != null && rawNum > 0) return rawNum
+        if (rawNum != null) return null
 
         return try {
             java.time.Instant.parse(raw).toEpochMilli()
@@ -448,15 +464,15 @@ class TransactionRepository(
                 val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSX", java.util.Locale.US).apply {
                     timeZone = java.util.TimeZone.getTimeZone("UTC")
                 }
-                sdf.parse(raw)?.time ?: System.currentTimeMillis()
+                sdf.parse(raw)?.time
             } catch (_: Exception) {
                 try {
                     val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).apply {
                         timeZone = java.util.TimeZone.getTimeZone("UTC")
                     }
-                    sdf.parse(raw)?.time ?: System.currentTimeMillis()
+                    sdf.parse(raw)?.time
                 } catch (_: Exception) {
-                    System.currentTimeMillis()
+                    null
                 }
             }
         }
@@ -472,7 +488,20 @@ class TransactionRepository(
         val hours = preferencesManager.autoDismissThreatHours.value
         if (hours <= 0) return 0
         val cutoff = System.currentTimeMillis() - (hours.toLong() * 3600_000L)
-        return db.alertDao().autoDismissOlderThan(cutoff)
+        val dismissed = db.alertDao().autoDismissOlderThan(cutoff)
+        // Push expirations to the server so dismissals survive re-syncs.
+        if (dismissed > 0 && authManager.isSignedIn()) {
+            val token = authManager.getAuthToken()
+            if (token != null) {
+                val expired = db.alertDao().getAllAlerts()
+                    .filter { it.isDismissed && it.timestamp < cutoff }
+                    .take(50)
+                for (alert in expired) {
+                    runCatching { apiClient.dismissAlert(alert.id, token) }
+                }
+            }
+        }
+        return dismissed
     }
 
     suspend fun fetchStats(): Result<StatsResponse> {

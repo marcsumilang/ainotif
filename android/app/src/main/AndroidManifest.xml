@@ -13,6 +13,20 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!-- Banking / payment apps monitored by the notification listener (avoids QUERY_ALL_PACKAGES) -->
+        <package android:name="com.chase.sig.android" />
+        <package android:name="com.revolut.revolut" />
+        <package android:name="com.monzo.android" />
+        <package android:name="com.venmo" />
+        <package android:name="com.transferwise.android" />
+        <package android:name="com.globe.gcash.android" />
+        <package android:name="com.paypal.android.p2pmobile" />
+        <package android:name="com.squareup.cash" />
+        <package android:name="com.wf.wellsfargomobile" />
+        <package android:name="com.infonow.bofa" />
+        <package android:name="com.citi.citimobile" />
+        <package android:name="com.capitalone.mobile" />
+        <package android:name="com.google.android.apps.messaging" />
     </queries>
 
     <application
@@ -23,7 +37,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.AiNotif"
-        android:usesCleartextTraffic="true">
+        android:usesCleartextTraffic="false">
 
         <activity
             android:name=".ui.MainActivity"
@@ -76,23 +90,33 @@
             android:name=".service.NotificationActionReceiver"
             android:exported="false" />
 
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/export_paths" />
+        </provider>
+
     
     <!-- Required: set your sentry.io project identifier (DSN) -->
     <meta-data android:name="io.sentry.dsn" android:value="https://de13df192e33461c4babda7eec64cd57@o4504088165220352.ingest.us.sentry.io/4512185643696128" />
-    <!-- Add data like request headers, user ip address and device name, see https://docs.sentry.io/platforms/android/data-management/data-collected/ for more info -->
-    <meta-data android:name="io.sentry.send-default-pii" android:value="true" />
+    <!-- Finance app: never collect PII, screenshots, or view hierarchies (may contain balances/OTPs) -->
+    <meta-data android:name="io.sentry.send-default-pii" android:value="false" />
 
     <!-- enable automatic breadcrumbs for user interactions (clicks, swipes, scrolls) -->
     <meta-data android:name="io.sentry.traces.user-interaction.enable" android:value="true" />
-    <!-- enable screenshot for crashes (could contain sensitive/PII data) -->
-    <meta-data android:name="io.sentry.attach-screenshot" android:value="true" />
+    <!-- screenshots / view hierarchy disabled: could contain sensitive financial data -->
+    <meta-data android:name="io.sentry.attach-screenshot" android:value="false" />
     <!-- enable view hierarchy for crashes -->
-    <meta-data android:name="io.sentry.attach-view-hierarchy" android:value="true" />
+    <meta-data android:name="io.sentry.attach-view-hierarchy" android:value="false" />
 
     <!-- enable the performance API by setting a sample-rate, adjust in production env -->
-    <meta-data android:name="io.sentry.traces.sample-rate" android:value="1.0" />
-    <!-- enable Sentry Logs -->
-    <meta-data android:name="io.sentry.logs.enabled" android:value="true" />
+    <meta-data android:name="io.sentry.traces.sample-rate" android:value="0.1" />
+    <!-- Sentry Logs disabled in finance release builds -->
+    <meta-data android:name="io.sentry.logs.enabled" android:value="false" />
 </application>
 
 </manifest>
