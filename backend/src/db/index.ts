@@ -29,7 +29,8 @@ export function getDb(): DrizzleDb | null {
   return null;
 }
 
-export const db = getDb();
+// Lazily resolved via getDb() so Worker/Node env is available at call time.
+// (No eager `export const db` — it would capture a stale null/pool at import time.)
 
 // In-Memory fallback store for seamless offline/dev testing
 interface MemoryStore {
@@ -86,7 +87,7 @@ export async function ensureUser(id: string, email?: string, displayName?: strin
   }
 }
 
-class TransactionIdConflictError extends Error {
+export class TransactionIdConflictError extends Error {
   constructor() { super("Transaction ID already exists"); }
 }
 
@@ -209,10 +210,11 @@ export async function getTransactions(userId: string, limit = 50): Promise<schem
 export async function deleteTransaction(userId: string, id: string): Promise<boolean> {
   const drizzleDb = getDb();
   if (drizzleDb) {
-    const result = await drizzleDb
+    const rows = await drizzleDb
       .delete(schema.transactions)
-      .where(and(eq(schema.transactions.id, id), eq(schema.transactions.userId, userId)));
-    return true;
+      .where(and(eq(schema.transactions.id, id), eq(schema.transactions.userId, userId)))
+      .returning({ id: schema.transactions.id });
+    return rows.length > 0;
   } else {
     const idx = memoryStore.transactions.findIndex((t) => t.id === id && t.userId === userId);
     if (idx !== -1) {
@@ -256,10 +258,11 @@ export async function bulkDeleteTransactions(userId: string, ids: string[]): Pro
   if (ids.length === 0) return 0;
   const drizzleDb = getDb();
   if (drizzleDb) {
-    await drizzleDb
+    const rows = await drizzleDb
       .delete(schema.transactions)
-      .where(and(inArray(schema.transactions.id, ids), eq(schema.transactions.userId, userId)));
-    return ids.length;
+      .where(and(inArray(schema.transactions.id, ids), eq(schema.transactions.userId, userId)))
+      .returning({ id: schema.transactions.id });
+    return rows.length;
   } else {
     const initialLen = memoryStore.transactions.length;
     memoryStore.transactions = memoryStore.transactions.filter(
@@ -273,11 +276,12 @@ export async function bulkUpdateCategory(userId: string, ids: string[], category
   if (ids.length === 0) return 0;
   const drizzleDb = getDb();
   if (drizzleDb) {
-    await drizzleDb
+    const rows = await drizzleDb
       .update(schema.transactions)
       .set({ category })
-      .where(and(inArray(schema.transactions.id, ids), eq(schema.transactions.userId, userId)));
-    return ids.length;
+      .where(and(inArray(schema.transactions.id, ids), eq(schema.transactions.userId, userId)))
+      .returning({ id: schema.transactions.id });
+    return rows.length;
   } else {
     let count = 0;
     for (const t of memoryStore.transactions) {
@@ -375,11 +379,12 @@ export async function getAlerts(userId: string, limit = 50): Promise<schema.Susp
 export async function dismissAlert(userId: string, id: string): Promise<boolean> {
   const drizzleDb = getDb();
   if (drizzleDb) {
-    await drizzleDb
+    const rows = await drizzleDb
       .update(schema.suspiciousAlerts)
       .set({ isDismissed: true })
-      .where(eq(schema.suspiciousAlerts.id, id));
-    return true;
+      .where(and(eq(schema.suspiciousAlerts.id, id), eq(schema.suspiciousAlerts.userId, userId)))
+      .returning({ id: schema.suspiciousAlerts.id });
+    return rows.length > 0;
   } else {
     const alert = memoryStore.alerts.find((a) => a.id === id && a.userId === userId);
     if (alert) {
@@ -394,18 +399,30 @@ export async function getStats(userId: string) {
   const userTransactions = await getTransactions(userId, 500);
   const userAlerts = await getAlerts(userId, 500);
 
-  const totalSpent = userTransactions
-    .filter((t) => t.type === "DEBIT")
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const totalReceived = userTransactions
-    .filter((t) => t.type === "CREDIT")
-    .reduce((sum, t) => sum + t.amount, 0);
+  // Amounts in different currencies must never be summed into one scalar.
+  // Report per-currency buckets plus TRANSFER counts separately.
+  const perCurrencySpent: Record<string, number> = {};
+  const perCurrencyReceived: Record<string, number> = {};
+  let transferCount = 0;
+  for (const t of userTransactions) {
+    if (t.type === "DEBIT") {
+      perCurrencySpent[t.currency] = Math.round(((perCurrencySpent[t.currency] || 0) + t.amount) * 100) / 100;
+    } else if (t.type === "CREDIT") {
+      perCurrencyReceived[t.currency] = Math.round(((perCurrencyReceived[t.currency] || 0) + t.amount) * 100) / 100;
+    } else if (t.type === "TRANSFER") {
+      transferCount += 1;
+    }
+  }
+  const spentCurrencies = Object.keys(perCurrencySpent);
+  const receivedCurrencies = Object.keys(perCurrencyReceived);
+  // Legacy single-currency convenience fields: only populated when unambiguous.
+  const totalSpent = spentCurrencies.length === 1 ? perCurrencySpent[spentCurrencies[0]] : 0;
+  const totalReceived = receivedCurrencies.length === 1 ? perCurrencyReceived[receivedCurrencies[0]] : 0;
 
   const categoryBreakdown: Record<string, number> = {};
   for (const t of userTransactions) {
     if (t.type === "DEBIT") {
-      categoryBreakdown[t.category] = (categoryBreakdown[t.category] || 0) + t.amount;
+      categoryBreakdown[`${t.category} (${t.currency})`] = Math.round(((categoryBreakdown[`${t.category} (${t.currency})`] || 0) + t.amount) * 100) / 100;
     }
   }
 
@@ -413,8 +430,14 @@ export async function getStats(userId: string) {
 
   return {
     totalTransactions: userTransactions.length,
-    totalSpent: Math.round(totalSpent * 100) / 100,
-    totalReceived: Math.round(totalReceived * 100) / 100,
+    totalSpent,
+    totalReceived,
+    perCurrencySpent,
+    perCurrencyReceived,
+    transferCount,
+    spentCurrencies,
+    receivedCurrencies,
+    mixedCurrency: spentCurrencies.length > 1 || receivedCurrencies.length > 1,
     categoryBreakdown,
     totalAlerts: userAlerts.length,
     activeAlerts,

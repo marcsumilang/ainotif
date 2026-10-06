@@ -9,22 +9,20 @@ import { statsRouter } from "./routes/stats.js";
 
 export const app = new Hono();
 
-// Sync Cloudflare Worker bindings / env to process.env dynamically
-app.use("*", async (c, next) => {
-  if (c.env && typeof c.env === "object") {
-    for (const [key, value] of Object.entries(c.env)) {
-      if (typeof value === "string") {
-        process.env[key] = value;
-      }
-    }
-  }
-  await next();
-});
-
 // Global Middleware
 app.use("*", logger());
 app.use("*", cors({
-  origin: "*",
+  origin: (origin) => {
+    const allowlist = (process.env.CORS_ALLOWED_ORIGINS || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    // Local dev defaults; production should set CORS_ALLOWED_ORIGINS explicitly.
+    const defaults = ["http://localhost:3001", "http://127.0.0.1:3001"];
+    const allowed = allowlist.length > 0 ? allowlist : defaults;
+    if (!origin) return null;
+    return allowed.includes(origin) ? origin : null;
+  },
   allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowHeaders: ["Content-Type", "Authorization"],
 }));

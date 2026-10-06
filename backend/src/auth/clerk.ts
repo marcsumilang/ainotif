@@ -1,5 +1,5 @@
 import { Context, Next } from "hono";
-import { createClerkClient, verifyToken } from "@clerk/backend";
+import { verifyToken } from "@clerk/backend";
 
 export interface AuthContext {
   userId: string;
@@ -17,19 +17,18 @@ export async function clerkAuthMiddleware(c: Context, next: Next) {
   const clerkSecretKey = (c.env as any)?.CLERK_SECRET_KEY || process.env.CLERK_SECRET_KEY;
   const devMockAuthEnv = (c.env as any)?.DEV_MOCK_AUTH ?? process.env.DEV_MOCK_AUTH;
   // Missing production credentials must fail closed; only an explicit local flag enables mock identities.
-  const isDevMock = devMockAuthEnv === "true";
+  // Mock is never honored in production, even if DEV_MOCK_AUTH is accidentally left "true".
+  const isDevMock = devMockAuthEnv === "true" && process.env.NODE_ENV !== "production";
 
   const authHeader = c.req.header("Authorization");
   const token = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;
 
-  // Development / Mock fallback mode
+  // Development / Mock fallback mode — local/test only, never production.
+  // Only the explicit `mock_user_<id>` shape is honored so arbitrary `user_*`
+  // tokens cannot impersonate real Clerk users.
   if (isDevMock) {
-    if (token && (token.startsWith("mock_") || token.startsWith("user_"))) {
-      const mockId = token.startsWith("mock_user_")
-        ? token.replace("mock_", "")
-        : token.startsWith("mock_")
-        ? "user_demo_dev"
-        : token;
+    if (token && token.startsWith("mock_user_")) {
+      const mockId = token.replace("mock_", "");
       c.set("auth", {
         userId: mockId,
         email: `${mockId}@example.com`,
@@ -39,10 +38,11 @@ export async function clerkAuthMiddleware(c: Context, next: Next) {
     }
 
     // If dev mock is enabled and no secret key is set, allow default demo user
-    if (!clerkSecretKey) {
-      const userId = token || "user_demo_dev";
+    // only when no bearer token was supplied (local demo). Any other token
+    // must fall through to real verification / 401 below.
+    if (!clerkSecretKey && !token) {
       c.set("auth", {
-        userId,
+        userId: "user_demo_dev",
         email: "demo@ainotif.local",
         isMock: true,
       });
@@ -76,15 +76,8 @@ export async function clerkAuthMiddleware(c: Context, next: Next) {
 
     return await next();
   } catch (err: any) {
-    if (isDevMock) {
-      console.warn("Clerk token verification failed in dev mock mode; falling back to demo session:", err?.message || err);
-      c.set("auth", {
-        userId: "user_demo_dev",
-        email: "demo@ainotif.local",
-        isMock: true,
-      });
-      return await next();
-    }
+    // Never fall back to a demo session on verification failure — that would
+    // let any invalid/expired/forged token authenticate. Always fail closed.
     console.error("Clerk token verification failed:", err?.message || err);
     return c.json({ error: "Unauthorized: Token verification failed", details: err?.message }, 401);
   }
