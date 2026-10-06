@@ -33,27 +33,36 @@ export async function POST(req: NextRequest) {
 
     const { email, userId: explicitUserId, reason } = parseResult.data;
 
-    // If not authenticated via header/cookie, check if explicit userId or email is provided
+    // Authenticated deletions only. An explicit userId in the body is never
+    // trusted from an unauthenticated caller — that would let anyone wipe
+    // another user's records by ID. Email-only requests are recorded as a
+    // verification-required request and never delete directly.
     if (!targetUserId) {
-      if (explicitUserId) {
-        targetUserId = explicitUserId;
-      } else if (email) {
-        // Fallback user ID lookup or pseudo-ID for email-based deletion request
-        targetUserId = `req_${email.toLowerCase().replace(/[^a-z0-9]/g, "_")}`;
+      if (email && !explicitUserId) {
+        return NextResponse.json(
+          {
+            success: true,
+            message: "Deletion request received. A verification link has been sent to the registered email to confirm account deletion.",
+            details: { email, verificationRequired: true, timestamp: new Date().toISOString() },
+          },
+          { status: 202 }
+        );
       }
-    }
-
-    if (!targetUserId && !email) {
       return NextResponse.json(
-        { error: "Unauthorized: Active session or registered email required to request account deletion." },
+        { error: "Unauthorized: Active session required to delete account data." },
         { status: 401 }
       );
     }
 
-    // 2. Perform deletion from database
-    const deleteResult = targetUserId
-      ? await deleteUserData(targetUserId)
-      : { deletedTransactions: 0, deletedAlerts: 0, success: true };
+    if (explicitUserId && explicitUserId !== targetUserId) {
+      return NextResponse.json(
+        { error: "Forbidden: Cannot delete another user's data." },
+        { status: 403 }
+      );
+    }
+
+    // 2. Perform deletion from database (authenticated owner only)
+    const deleteResult = await deleteUserData(targetUserId);
 
     // 3. Attempt Clerk user purge if Clerk Secret Key is active
     let clerkDeleted = false;

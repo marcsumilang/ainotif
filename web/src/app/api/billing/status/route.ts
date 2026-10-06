@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/auth";
-import { getUserPlan, setUserPlan, getTransactions, getAlerts, ensureUser } from "@/lib/db";
+import { getUserPlan, setUserPlan, getTransactions, getAlerts } from "@/lib/db";
 import { PLAN_LIMITS, checkClerkIsPro } from "@/lib/billing";
 import { auth } from "@clerk/nextjs/server";
 
@@ -58,21 +58,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Self-serve plan switches are a local-dev helper only. In any deployed
+  // environment the plan is owned by Clerk Billing webhooks.
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      { error: "Plan changes are managed via Clerk Billing checkout." },
+      { status: 403 }
+    );
+  }
+
   try {
     const body = await req.json();
     const targetPlan = body.plan === "pro" ? "pro" : "free";
     await setUserPlan(authUser.userId, targetPlan);
 
-    if (typeof body.notificationCount === "number") {
-      const u = await ensureUser(authUser.userId);
-      u.notificationCount = body.notificationCount;
-    }
-
     return NextResponse.json({
       success: true,
       message: `User plan successfully set to ${targetPlan}`,
       plan: targetPlan,
-      notificationCount: typeof body.notificationCount === "number" ? body.notificationCount : undefined,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "Failed to update plan" }, { status: 500 });

@@ -177,8 +177,9 @@ const seedAlerts: schema.SuspiciousAlert[] = [
 const memoryStore: MemoryStore = {
   analyses: [],
   users: new Map(),
-  transactions: [...seedTransactions],
-  alerts: [...seedAlerts],
+  // Seed/demo rows are local-preview only and never served in production.
+  transactions: process.env.NODE_ENV === "production" ? [] : [...seedTransactions],
+  alerts: process.env.NODE_ENV === "production" ? [] : [...seedAlerts],
 };
 
 export async function ensureUser(id: string, email?: string, displayName?: string): Promise<schema.User> {
@@ -397,7 +398,7 @@ export async function getTransactions(userId: string, limit = 100): Promise<sche
   }
 
   return memoryStore.transactions
-    .filter((t) => t.userId === userId || userId === "all" || userId === "user_demo_dev")
+    .filter((t) => t.userId === userId)
     .slice(0, limit);
 }
 
@@ -405,15 +406,22 @@ export async function deleteTransaction(userId: string, id: string): Promise<boo
   const drizzleDb = getDb();
   if (drizzleDb) {
     try {
-      await drizzleDb
+      const rows = await drizzleDb
         .delete(schema.transactions)
-        .where(eq(schema.transactions.id, id));
+        .where(and(eq(schema.transactions.id, id), eq(schema.transactions.userId, userId)))
+        .returning({ id: schema.transactions.id });
+      if (rows.length > 0) {
+        // Keep memory fallback consistent when DB is reachable.
+        const index = memoryStore.transactions.findIndex((t) => t.id === id && t.userId === userId);
+        if (index !== -1) memoryStore.transactions.splice(index, 1);
+        return true;
+      }
     } catch {
-      // Continue to remove from memory store as well
+      // Fall through to memory store
     }
   }
 
-  const index = memoryStore.transactions.findIndex((t) => t.id === id);
+  const index = memoryStore.transactions.findIndex((t) => t.id === id && t.userId === userId);
   if (index !== -1) {
     memoryStore.transactions.splice(index, 1);
     return true;
@@ -426,6 +434,9 @@ export async function updateTransaction(
   id: string,
   updates: { merchant?: string; category?: string; amount?: number; note?: string }
 ): Promise<schema.Transaction | null> {
+  if (updates.note !== undefined) {
+    throw new Error("Field 'note' is not supported on transactions");
+  }
   const drizzleDb = getDb();
   if (drizzleDb) {
     try {
@@ -436,13 +447,21 @@ export async function updateTransaction(
           ...(updates.category ? { category: updates.category } : {}),
           ...(updates.amount ? { amount: updates.amount } : {}),
         })
-        .where(eq(schema.transactions.id, id))
+        .where(and(eq(schema.transactions.id, id), eq(schema.transactions.userId, userId)))
         .returning();
-      if (updated) return updated;
+      if (updated) {
+        const mem = memoryStore.transactions.find((t) => t.id === id && t.userId === userId);
+        if (mem) {
+          if (updates.merchant) mem.merchant = updates.merchant;
+          if (updates.category) mem.category = updates.category;
+          if (updates.amount) mem.amount = updates.amount;
+        }
+        return updated;
+      }
     } catch {}
   }
 
-  const tx = memoryStore.transactions.find((t) => t.id === id);
+  const tx = memoryStore.transactions.find((t) => t.id === id && t.userId === userId);
   if (tx) {
     if (updates.merchant) tx.merchant = updates.merchant;
     if (updates.category) tx.category = updates.category;
@@ -454,18 +473,23 @@ export async function updateTransaction(
 
 export async function bulkDeleteTransactions(userId: string, ids: string[]): Promise<number> {
   if (ids.length === 0) return 0;
-  for (const id of ids) {
-    await deleteTransaction(userId, id);
+  const unique = [...new Set(ids)].slice(0, 100);
+  let count = 0;
+  for (const id of unique) {
+    if (await deleteTransaction(userId, id)) count += 1;
   }
-  return ids.length;
+  return count;
 }
 
 export async function bulkUpdateCategory(userId: string, ids: string[], category: string): Promise<number> {
   if (ids.length === 0) return 0;
-  for (const id of ids) {
-    await updateTransaction(userId, id, { category });
+  const unique = [...new Set(ids)].slice(0, 100);
+  let count = 0;
+  for (const id of unique) {
+    const updated = await updateTransaction(userId, id, { category });
+    if (updated) count += 1;
   }
-  return ids.length;
+  return count;
 }
 
 export async function saveAlert(data: {
@@ -554,7 +578,7 @@ export async function getAlerts(userId: string, limit = 100): Promise<schema.Sus
   }
 
   return memoryStore.alerts
-    .filter((a) => a.userId === userId || userId === "all" || userId === "user_demo_dev")
+    .filter((a) => a.userId === userId)
     .slice(0, limit);
 }
 
@@ -562,39 +586,56 @@ export async function dismissAlert(userId: string, id: string): Promise<boolean>
   const drizzleDb = getDb();
   if (drizzleDb) {
     try {
-      await drizzleDb
+      const rows = await drizzleDb
         .update(schema.suspiciousAlerts)
         .set({ isDismissed: true })
-        .where(eq(schema.suspiciousAlerts.id, id));
+        .where(and(eq(schema.suspiciousAlerts.id, id), eq(schema.suspiciousAlerts.userId, userId)))
+        .returning({ id: schema.suspiciousAlerts.id });
+      if (rows.length > 0) {
+        const mem = memoryStore.alerts.find((a) => a.id === id && a.userId === userId);
+        if (mem) mem.isDismissed = true;
+        return true;
+      }
     } catch {
-      // Continue to update memory store
+      // Fall through to memory store
     }
   }
 
-  const alert = memoryStore.alerts.find((a) => a.id === id);
+  const alert = memoryStore.alerts.find((a) => a.id === id && a.userId === userId);
   if (alert) {
     alert.isDismissed = true;
     return true;
   }
-  return true;
+  return false;
 }
 
 export async function getStats(userId: string) {
   const userTransactions = await getTransactions(userId, 500);
   const userAlerts = await getAlerts(userId, 500);
 
-  const totalSpent = userTransactions
-    .filter((t) => t.type === "DEBIT")
-    .reduce((sum, t) => sum + t.amount, 0);
-
-  const totalReceived = userTransactions
-    .filter((t) => t.type === "CREDIT")
-    .reduce((sum, t) => sum + t.amount, 0);
+  // Never sum across currencies into one scalar. Report per-currency buckets.
+  const perCurrencySpent: Record<string, number> = {};
+  const perCurrencyReceived: Record<string, number> = {};
+  let transferCount = 0;
+  for (const t of userTransactions) {
+    if (t.type === "DEBIT") {
+      perCurrencySpent[t.currency] = Math.round(((perCurrencySpent[t.currency] || 0) + t.amount) * 100) / 100;
+    } else if (t.type === "CREDIT") {
+      perCurrencyReceived[t.currency] = Math.round(((perCurrencyReceived[t.currency] || 0) + t.amount) * 100) / 100;
+    } else if (t.type === "TRANSFER") {
+      transferCount += 1;
+    }
+  }
+  const spentCurrencies = Object.keys(perCurrencySpent);
+  const receivedCurrencies = Object.keys(perCurrencyReceived);
+  const totalSpent = spentCurrencies.length === 1 ? perCurrencySpent[spentCurrencies[0]] : 0;
+  const totalReceived = receivedCurrencies.length === 1 ? perCurrencyReceived[receivedCurrencies[0]] : 0;
 
   const categoryBreakdown: Record<string, number> = {};
   for (const t of userTransactions) {
     if (t.type === "DEBIT") {
-      categoryBreakdown[t.category] = (categoryBreakdown[t.category] || 0) + t.amount;
+      const key = `${t.category} (${t.currency})`;
+      categoryBreakdown[key] = Math.round(((categoryBreakdown[key] || 0) + t.amount) * 100) / 100;
     }
   }
 
@@ -605,9 +646,17 @@ export async function getStats(userId: string) {
 
   return {
     totalTransactions: userTransactions.length,
-    totalSpent: Math.round(totalSpent * 100) / 100,
-    totalReceived: Math.round(totalReceived * 100) / 100,
-    netFlow: Math.round((totalReceived - totalSpent) * 100) / 100,
+    totalSpent,
+    totalReceived,
+    perCurrencySpent,
+    perCurrencyReceived,
+    transferCount,
+    spentCurrencies,
+    receivedCurrencies,
+    mixedCurrency: spentCurrencies.length > 1 || receivedCurrencies.length > 1,
+    netFlow: spentCurrencies.length === 1 && receivedCurrencies.length === 1 && spentCurrencies[0] === receivedCurrencies[0]
+      ? Math.round((perCurrencyReceived[receivedCurrencies[0]] - perCurrencySpent[spentCurrencies[0]]) * 100) / 100
+      : 0,
     categoryBreakdown,
     totalAlerts: userAlerts.length,
     activeAlerts,
