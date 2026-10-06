@@ -51,6 +51,7 @@ import QRCode from "qrcode";
 import { BillingTab } from "@/components/BillingTab";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { PlanType, PLAN_LIMITS, checkClerkIsPro } from "@/lib/billing";
+import { RATES_TO_USD, CURRENCY_SYMBOLS, convertCurrency, formatCurrency } from "@/lib/fx";
 
 interface Transaction {
   id: string;
@@ -116,63 +117,6 @@ const PRESETS = [
     category: "Privacy / Dropped",
   },
 ];
-
-const RATES_TO_USD: Record<string, number> = {
-  USD: 1.0,
-  EUR: 1.08,
-  GBP: 1.28,
-  PHP: 0.0175,
-  CAD: 0.73,
-  AUD: 0.65,
-  JPY: 0.0065,
-  INR: 0.012,
-  SGD: 0.75,
-  NZD: 0.61,
-  CHF: 1.12,
-  HKD: 0.128,
-};
-
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  USD: "$",
-  EUR: "€",
-  GBP: "£",
-  PHP: "₱",
-  CAD: "CA$",
-  AUD: "A$",
-  JPY: "¥",
-  INR: "₹",
-  SGD: "S$",
-  NZD: "NZ$",
-  CHF: "CHF ",
-  HKD: "HK$",
-};
-
-function convertCurrency(amount: number, from: string, to: string): number | null {
-  if (from.toUpperCase() === to.toUpperCase()) return amount;
-  const fromRate = RATES_TO_USD[from.toUpperCase()];
-  const toRate = RATES_TO_USD[to.toUpperCase()];
-  if (fromRate === undefined || toRate === undefined) return null;
-  const inUsd = amount * fromRate;
-  return inUsd / toRate;
-}
-
-function formatCurrency(amount: number, currency: string): string {
-  const code = (currency || "USD").toUpperCase();
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency: code,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount);
-  } catch {
-    const sym = CURRENCY_SYMBOLS[code] || `${code} `;
-    return `${sym}${Math.abs(amount).toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
-  }
-}
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<"overview" | "transactions" | "alerts" | "analytics" | "simulator" | "billing">("overview");
@@ -335,13 +279,18 @@ export default function Dashboard() {
     fetchData();
   }, [userId, authToken]);
 
-  // Connect to Server-Sent Events (SSE) Stream
+  // Connect to Server-Sent Events (SSE) Stream, with polling fallback.
+  // The in-memory bus only fans out within one server instance, and
+  // EventSource cannot send Bearer headers, so polling keeps Bearer-only and
+  // multi-instance deployments fresh when the stream is unavailable.
+  const [sseAvailable, setSseAvailable] = useState<boolean>(true);
   useEffect(() => {
     let evtSource: EventSource | null = null;
     try {
       evtSource = new EventSource("/api/events");
       evtSource.addEventListener("connected", () => {
         setIsLiveStreamActive(true);
+        setSseAvailable(true);
       });
 
       evtSource.addEventListener("transaction_created", (e: MessageEvent) => {
@@ -409,15 +358,27 @@ export default function Dashboard() {
 
       evtSource.onerror = () => {
         setIsLiveStreamActive(false);
+        setSseAvailable(false);
+        evtSource?.close();
       };
     } catch (_: unknown) {
       setIsLiveStreamActive(false);
+      setSseAvailable(false);
     }
 
     return () => {
       evtSource?.close();
     };
   }, []);
+
+  // Polling fallback while the live stream is unavailable.
+  useEffect(() => {
+    if (sseAvailable && isLiveStreamActive) return;
+    const id = window.setInterval(() => {
+      fetchData();
+    }, 15000);
+    return () => window.clearInterval(id);
+  }, [sseAvailable, isLiveStreamActive, userId, authToken]);
 
   // Multi-currency normalized statistics (transfers tracked separately, never
   // mixed into spent/received).
