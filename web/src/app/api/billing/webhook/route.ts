@@ -1,9 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
 import { setUserPlan } from "@/lib/db";
 
+function unauthorized(message: string) {
+  return NextResponse.json({ error: message }, { status: 401 });
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const payload = await req.json();
+    const webhookSecret = process.env.CLERK_WEBHOOK_SECRET || process.env.CLERK_BILLING_WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      // Fail closed: never apply plan changes from unverifiable webhooks.
+      console.error("[Clerk Billing Webhook] Missing CLERK_WEBHOOK_SECRET; rejecting webhook.");
+      return NextResponse.json({ error: "Webhook not configured" }, { status: 500 });
+    }
+
+    // Verify via Clerk/Svix Standard Webhooks (svix-id / svix-timestamp /
+    // svix-signature headers). Rejects forged plan-escalation POSTs.
+    // verifyWebhook consumes the request body and returns the verified event.
+    let payload: any;
+    try {
+      const { verifyWebhook } = await import("@clerk/backend/webhooks");
+      payload = await verifyWebhook(req as any, { signingSecret: webhookSecret } as any);
+    } catch (err: any) {
+      // Fall back to a shared-secret header for non-Svix senders; otherwise reject.
+      const shared = req.headers.get("x-webhook-secret");
+      if (!shared || shared !== webhookSecret) {
+        console.warn("[Clerk Billing Webhook] Signature verification failed:", err?.message || err);
+        return unauthorized("Invalid webhook signature");
+      }
+      try {
+        payload = JSON.parse(await req.text());
+      } catch {
+        return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+      }
+    }
+
     const eventType = payload?.type;
     const data = payload?.data;
 
@@ -15,7 +46,7 @@ export async function POST(req: NextRequest) {
       const planKey = data?.plan?.key || data?.plan_id || "";
 
       if (userId) {
-        const isPro = status === "active" || planKey.includes("pro");
+        const isPro = status === "active" || String(planKey).includes("pro");
         await setUserPlan(userId, isPro ? "pro" : "free");
         console.log(`[Clerk Billing Webhook] User ${userId} plan updated to ${isPro ? "pro" : "free"}`);
       }
