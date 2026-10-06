@@ -475,19 +475,20 @@ fun AlertItemCard(
 }
 
 private fun shareScamWarning(context: Context, alert: AlertEntity) {
+    val defanged = com.ainotif.service.AiNotificationListenerService.defangUrls(alert.rawNotification)
     val shareText = """
-        🚨 AiNotif Scam Alert (${alert.riskScore}% Risk)
+        AiNotif Scam Alert (${alert.riskScore}% Risk)
         Reason: ${alert.reason}
         
-        Original intercepted message:
-        "${alert.rawNotification}"
+        Original intercepted message (links defanged, do not open):
+        "$defanged"
         
         Security Advice: Do not click any links or provide sensitive credentials.
     """.trimIndent()
 
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
-        putExtra(Intent.EXTRA_SUBJECT, "⚠️ Phishing Scam Warning Intercepted")
+        putExtra(Intent.EXTRA_SUBJECT, "Phishing Scam Warning Intercepted")
         putExtra(Intent.EXTRA_TEXT, shareText)
     }
     val chooser = Intent.createChooser(intent, "Share Scam Warning")

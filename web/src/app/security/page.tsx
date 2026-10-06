@@ -105,7 +105,7 @@ export default function SecurityPage() {
               <h4 className="font-bold text-[#163300] text-sm mb-1">Security Practices</h4>
               <ul className="text-xs text-[#6a6c6a] space-y-1 list-disc pl-4">
                 <li><strong>Data is encrypted in transit:</strong> Yes (HTTPS / TLS 1.3).</li>
-                <li><strong>Account Deletion Available:</strong> Yes, users can request account and data deletion both in-app and via web URL at <code className="text-[#163300] font-bold">https://notifai.app/delete-account</code>.</li>
+                <li><strong>Account Deletion Available:</strong> Yes, users can request account and data deletion both in-app and via web URL at <code className="text-[#163300] font-bold">/delete-account</code>.</li>
                 <li><strong>Data Retention:</strong> Users can delete all stored data permanently at any time.</li>
               </ul>
             </div>

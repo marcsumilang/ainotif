@@ -81,35 +81,35 @@ interface SuspiciousAlert {
 
 const PRESETS = [
   {
-    label: "🛒 Chase Grocery Spend",
+    label: "Chase Grocery Spend",
     title: "Chase Mobile",
     text: "You spent $84.20 at Trader Joe's Market on card ending in 8832.",
     packageName: "com.chase.sig.android",
     category: "Financial / Debit",
   },
   {
-    label: "☕ Starbucks Coffee",
+    label: "Starbucks Coffee",
     title: "Citi Alerts",
     text: "Authorized charge of $5.75 at Starbucks Coffee store #1042.",
     packageName: "com.citibank.mobile.citibankmobile",
     category: "Financial / Debit",
   },
   {
-    label: "💼 Salary Direct Deposit",
+    label: "Salary Direct Deposit",
     title: "Bank of America",
     text: "Direct Deposit of $3,450.00 from TECHCORP GLOBAL INC has arrived.",
     packageName: "com.infonow.bofa",
     category: "Financial / Credit",
   },
   {
-    label: "🚨 Urgent Phishing Scam SMS",
+    label: "Urgent Phishing Scam SMS",
     title: "SMS: +1 (800) 555-0199",
     text: "URGENT SECURITY NOTICE: Your Wells Fargo debit card has been suspended. Tap http://bit.ly/wf-auth-sec within 15 mins to restore access.",
     packageName: "com.google.android.apps.messaging",
     category: "Threat / Scam",
   },
   {
-    label: "🛡️ Sensitive OTP Code (Privacy Drop)",
+    label: "Sensitive OTP Code (Privacy Drop)",
     title: "Google Auth",
     text: "Your verification code is 492019. Do NOT share this code with anyone.",
     packageName: "com.google.android.apps.messaging",
@@ -127,6 +127,9 @@ const RATES_TO_USD: Record<string, number> = {
   JPY: 0.0065,
   INR: 0.012,
   SGD: 0.75,
+  NZD: 0.61,
+  CHF: 1.12,
+  HKD: 0.128,
 };
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -139,6 +142,9 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   JPY: "¥",
   INR: "₹",
   SGD: "S$",
+  NZD: "NZ$",
+  CHF: "CHF ",
+  HKD: "HK$",
 };
 
 function convertCurrency(amount: number, from: string, to: string): number | null {
@@ -151,11 +157,21 @@ function convertCurrency(amount: number, from: string, to: string): number | nul
 }
 
 function formatCurrency(amount: number, currency: string): string {
-  const sym = CURRENCY_SYMBOLS[currency] || currency + " ";
-  return `${sym}${Math.abs(amount).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+  const code = (currency || "USD").toUpperCase();
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: code,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    const sym = CURRENCY_SYMBOLS[code] || `${code} `;
+    return `${sym}${Math.abs(amount).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
 }
 
 export default function Dashboard() {
@@ -205,7 +221,14 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (showLinkModal) {
-      const callbackLink = `notifai://oauth/callback?token=${encodeURIComponent(authToken || "mock_clerk_token")}&userId=${encodeURIComponent(userId)}&email=${encodeURIComponent(userEmail)}`;
+      // Never encode a mock token. Pairing requires a signed-in Clerk session;
+      // the QR embeds the short-lived session JWT and should be treated like a
+      // password (single use, do not screenshot or share).
+      if (!authToken) {
+        setQrCodeUrl(null);
+        return;
+      }
+      const callbackLink = `notifai://oauth/callback?token=${encodeURIComponent(authToken)}&userId=${encodeURIComponent(userId)}&email=${encodeURIComponent(userEmail)}`;
       QRCode.toDataURL(callbackLink, {
         width: 280,
         margin: 1.5,
@@ -220,7 +243,10 @@ export default function Dashboard() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [alerts, setAlerts] = useState<SuspiciousAlert[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ ids: string[]; label: string } | null>(null);
+  const [undoDelete, setUndoDelete] = useState<{ items: Transaction[] } | null>(null);
 
   // SSE & Live Animation State
   const [isLiveStreamActive, setIsLiveStreamActive] = useState<boolean>(false);
@@ -261,24 +287,32 @@ export default function Dashboard() {
 
   const fetchData = async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const headers: Record<string, string> = {};
       if (authToken) {
         headers["Authorization"] = `Bearer ${authToken}`;
       }
       const [txRes, alertsRes, billingRes] = await Promise.all([
-        fetch(`/api/transactions?userId=${userId}`, { headers }),
-        fetch(`/api/alerts?userId=${userId}`, { headers }),
-        fetch(`/api/billing/status?userId=${userId}`, { headers }),
+        fetch(`/api/transactions`, { headers }),
+        fetch(`/api/alerts`, { headers }),
+        fetch(`/api/billing/status`, { headers }),
       ]);
 
+      const failures: string[] = [];
       if (txRes.ok) {
         const data = await txRes.json();
         setTransactions(data.transactions || []);
+      } else if (txRes.status === 401) {
+        failures.push("Sign in to view transactions");
+      } else {
+        failures.push("Transactions unavailable");
       }
       if (alertsRes.ok) {
         const data = await alertsRes.json();
         setAlerts(data.alerts || []);
+      } else if (alertsRes.status !== 401) {
+        failures.push("Alerts unavailable");
       }
       if (billingRes.ok) {
         const bData = await billingRes.json();
@@ -286,8 +320,12 @@ export default function Dashboard() {
         setUserPlanState(clerkPro ? "pro" : bData.plan || "free");
         setNotificationCount(bData.usage?.notificationsUsed || 0);
       }
+      if (failures.length > 0) {
+        setFetchError(failures.join(" • "));
+      }
     } catch (err) {
       console.error("Failed to load dashboard data:", err);
+      setFetchError("Network error loading dashboard. Check your connection and retry.");
     } finally {
       setLoading(false);
     }
@@ -381,15 +419,21 @@ export default function Dashboard() {
     };
   }, []);
 
-  // Multi-currency normalized statistics
+  // Multi-currency normalized statistics (transfers tracked separately, never
+  // mixed into spent/received).
   const normalizedStats = useMemo(() => {
     let spent = 0;
     let received = 0;
+    let transferCount = 0;
     const unconvertedCurrencies = new Set<string>();
     let unconvertedCount = 0;
     const breakdown: Record<string, number> = {};
 
     for (const t of transactions) {
+      if (t.type === "TRANSFER") {
+        transferCount += 1;
+        continue;
+      }
       if (t.type !== "DEBIT" && t.type !== "CREDIT") continue;
       const converted = convertCurrency(t.amount, t.currency || "USD", baseCurrency);
       if (converted === null) {
@@ -413,6 +457,7 @@ export default function Dashboard() {
       categoryBreakdown: breakdown,
       unconvertedCount,
       unconvertedCurrencies: [...unconvertedCurrencies].sort(),
+      transferCount,
       totalTransactions: transactions.length,
       activeAlerts: alerts.filter((a) => !a.isDismissed).length,
       totalAlerts: alerts.length,
@@ -436,7 +481,7 @@ export default function Dashboard() {
       const res = await fetch("/api/alerts", {
         method: "PATCH",
         headers: getAuthHeaders(),
-        body: JSON.stringify({ id: alertId, userId }),
+        body: JSON.stringify({ id: alertId }),
       });
       if (res.ok) {
         setAlerts((prev) =>
@@ -449,20 +494,39 @@ export default function Dashboard() {
   };
 
   const handleDeleteTransaction = async (txId: string) => {
-    if (!confirm("Are you sure you want to delete this transaction record?")) return;
+    const target = transactions.find((t) => t.id === txId);
+    setConfirmDelete({ ids: [txId], label: target ? `Delete "${target.merchant} • ${formatCurrency(target.amount, target.currency)}"?` : "Delete this transaction record?" });
+  };
+
+  const executeDelete = async () => {
+    if (!confirmDelete) return;
+    const ids = confirmDelete.ids;
+    const removed = transactions.filter((t) => ids.includes(t.id));
     try {
-      const res = await fetch(`/api/transactions?id=${txId}&userId=${userId}`, {
-        method: "DELETE",
-        headers: getAuthHeaders(),
-      });
-      if (res.ok) {
-        setTransactions((prev) => prev.filter((t) => t.id !== txId));
-        if (inspectedItem?.item.id === txId) {
-          setInspectedItem(null);
-        }
+      if (ids.length === 1) {
+        const res = await fetch(`/api/transactions?id=${ids[0]}`, {
+          method: "DELETE",
+          headers: getAuthHeaders(),
+        });
+        if (!res.ok) return;
+      } else {
+        const res = await fetch(`/api/transactions?ids=${ids.join(",")}`, {
+          method: "DELETE",
+          headers: getAuthHeaders(),
+        });
+        if (!res.ok) return;
       }
+      setTransactions((prev) => prev.filter((t) => !ids.includes(t.id)));
+      setSelectedTxIds(new Set());
+      if (inspectedItem && ids.includes(inspectedItem.item.id)) {
+        setInspectedItem(null);
+      }
+      setUndoDelete({ items: removed });
+      window.setTimeout(() => setUndoDelete(null), 8000);
     } catch (err) {
       console.error("Failed to delete transaction:", err);
+    } finally {
+      setConfirmDelete(null);
     }
   };
 
@@ -516,20 +580,10 @@ export default function Dashboard() {
       return;
     }
     if (selectedTxIds.size === 0) return;
-    if (!confirm(`Delete ${selectedTxIds.size} selected transaction(s)?`)) return;
-    try {
-      const ids = Array.from(selectedTxIds).join(",");
-      const res = await fetch(`/api/transactions?ids=${ids}&userId=${userId}`, {
-        method: "DELETE",
-        headers: getAuthHeaders(),
-      });
-      if (res.ok) {
-        setTransactions((prev) => prev.filter((t) => !selectedTxIds.has(t.id)));
-        setSelectedTxIds(new Set());
-      }
-    } catch (err) {
-      console.error("Bulk delete failed:", err);
-    }
+    setConfirmDelete({
+      ids: Array.from(selectedTxIds),
+      label: `Delete ${selectedTxIds.size} selected transaction(s)? This can be undone for 8 seconds.`,
+    });
   };
 
   const handleBulkCategorize = async (category: string) => {
@@ -544,7 +598,7 @@ export default function Dashboard() {
       const res = await fetch("/api/transactions", {
         method: "PATCH",
         headers: getAuthHeaders(),
-        body: JSON.stringify({ ids, category, userId }),
+        body: JSON.stringify({ ids, category }),
       });
       if (res.ok) {
         setTransactions((prev) =>
@@ -625,8 +679,19 @@ export default function Dashboard() {
     }
   };
 
-  const copyText = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
+  const copyText = async (text: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch { /* clipboard unavailable */ }
+    }
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
   };
@@ -780,7 +845,7 @@ export default function Dashboard() {
                   >
                     <span>{tab.label}</span>
                     {Boolean(tab.badge && (typeof tab.badge === "number" ? tab.badge > 0 : true)) && (
-                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                      <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
                         tab.badge === "PRO"
                           ? "bg-[#9fe870] text-[#163300]"
                           : isActive ? "bg-[#9fe870] text-[#163300]" : "bg-[#cb272f] text-white"
@@ -804,8 +869,9 @@ export default function Dashboard() {
 
             {/* Base Currency Pill Selector */}
             <div className="flex items-center bg-white border border-[#e8ebe6] rounded-full px-3 py-1 text-xs font-bold text-[#163300]">
-              <span className="text-[#868685] mr-1.5 font-medium">Base:</span>
+              <label htmlFor="base-currency" className="text-[#868685] mr-1.5 font-medium">Base:</label>
               <select
+                id="base-currency"
                 value={baseCurrency}
                 onChange={(e) => setBaseCurrency(e.target.value)}
                 className="bg-transparent font-bold focus:outline-none cursor-pointer pr-1"
@@ -822,6 +888,7 @@ export default function Dashboard() {
             <button
               onClick={fetchData}
               title="Refresh Feed"
+              aria-label="Refresh dashboard data"
               className="w-9 h-9 rounded-full bg-white border border-[#e8ebe6] flex items-center justify-center text-[#163300] hover:bg-[#e8ebe6] transition-colors"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
@@ -902,7 +969,7 @@ export default function Dashboard() {
               >
                 <span>{tab.label}</span>
                 {Boolean(tab.badge && (typeof tab.badge === "number" ? tab.badge > 0 : true)) && (
-                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                  <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${
                     tab.badge === "PRO" ? "bg-[#9fe870] text-[#163300] font-black" : "bg-[#cb272f] text-white"
                   }`}>
                     {tab.badge}
@@ -926,10 +993,10 @@ export default function Dashboard() {
               <div>
                 <div className="flex items-center gap-2">
                   <h4 className="font-bold text-base text-white">
-                    Clerk Cloud Sync Active
+                    Demo Preview
                   </h4>
                   <span className="bg-[#9fe870]/20 text-[#9fe870] text-[10px] font-bold px-2 py-0.5 rounded-full border border-[#9fe870]/30 uppercase">
-                    Previewing Demo
+                    Not signed in
                   </span>
                 </div>
                 <p className="text-xs text-zinc-300 mt-0.5 max-w-xl">
@@ -952,7 +1019,46 @@ export default function Dashboard() {
           </div>
         )}
 
-        <NotificationReviewQueue authToken={authToken} refreshKey={simLoading} />
+        <NotificationReviewQueue authToken={authToken} refreshToken={Number(simLoading)} />
+        {fetchError && (
+          <div role="alert" className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <span>{fetchError}</span>
+            <button onClick={() => fetchData()} className="shrink-0 rounded-full bg-[#163300] px-4 py-1.5 text-xs font-bold text-white hover:bg-[#204505]">
+              Retry
+            </button>
+          </div>
+        )}
+        {undoDelete && (
+          <div role="status" className="mb-6 rounded-xl border border-[#9fe870] bg-[#e2f6d5] px-4 py-3 text-sm text-[#163300] flex items-center justify-between gap-3">
+            <span>Deleted {undoDelete.items.length} transaction(s).</span>
+            <button
+              onClick={async () => {
+                for (const t of undoDelete.items) {
+                  await fetch("/api/transactions", {
+                    method: "POST",
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({
+                      id: t.id,
+                      amount: t.amount,
+                      currency: t.currency,
+                      merchant: t.merchant,
+                      category: t.category,
+                      type: t.type,
+                      rawNotification: t.rawNotification,
+                      sourcePackage: t.sourcePackage || undefined,
+                      timestamp: new Date(t.timestamp).getTime(),
+                    }),
+                  });
+                }
+                setUndoDelete(null);
+                fetchData();
+              }}
+              className="shrink-0 rounded-full bg-[#163300] px-4 py-1.5 text-xs font-bold text-white hover:bg-[#204505]"
+            >
+              Undo
+            </button>
+          </div>
+        )}
         {normalizedStats.unconvertedCount > 0 && (
           <p className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
             {normalizedStats.unconvertedCount} transaction(s) in {normalizedStats.unconvertedCurrencies.join(", ")} are excluded from converted totals because no {baseCurrency} conversion rate is available. Original amounts remain in the ledger.
@@ -979,6 +1085,9 @@ export default function Dashboard() {
                 <h1 className="text-4xl sm:text-6xl font-black text-[#9fe870] tracking-tight mb-4">
                   {formatCurrency(normalizedStats.totalSpent, baseCurrency)}
                 </h1>
+                <p className="text-white/60 text-xs mb-2">
+                  Converted to {baseCurrency}. Transfers ({normalizedStats.transferCount}) are tracked separately and excluded from outflow/inflow.
+                </p>
 
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-4 border-t border-white/15">
                   <div>
@@ -1311,7 +1420,7 @@ export default function Dashboard() {
                     <Download className="w-3.5 h-3.5" />
                     <span>CSV</span>
                     {userPlan !== "pro" && (
-                      <span className="bg-[#163300] text-[#9fe870] text-[9px] font-black px-1.5 py-0.2 rounded-full">
+                      <span className="bg-[#163300] text-[#9fe870] text-[9px] font-black px-1.5 py-0.5 rounded-full">
                         PRO
                       </span>
                     )}
@@ -1325,7 +1434,7 @@ export default function Dashboard() {
                     <Download className="w-3.5 h-3.5" />
                     <span>JSON</span>
                     {userPlan !== "pro" && (
-                      <span className="bg-[#163300] text-[#9fe870] text-[9px] font-black px-1.5 py-0.2 rounded-full">
+                      <span className="bg-[#163300] text-[#9fe870] text-[9px] font-black px-1.5 py-0.5 rounded-full">
                         PRO
                       </span>
                     )}
@@ -1437,7 +1546,7 @@ export default function Dashboard() {
                   >
                     <span>Set Category</span>
                     {userPlan !== "pro" && (
-                      <span className="bg-[#163300] text-[#9fe870] text-[9px] font-black px-1.5 py-0.2 rounded-full">
+                      <span className="bg-[#163300] text-[#9fe870] text-[9px] font-black px-1.5 py-0.5 rounded-full">
                         PRO
                       </span>
                     )}
@@ -1449,7 +1558,7 @@ export default function Dashboard() {
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Delete</span>
                     {userPlan !== "pro" && (
-                      <span className="bg-black/40 text-[#9fe870] text-[9px] font-black px-1.5 py-0.2 rounded-full">
+                      <span className="bg-black/40 text-[#9fe870] text-[9px] font-black px-1.5 py-0.5 rounded-full">
                         PRO
                       </span>
                     )}
@@ -1473,6 +1582,7 @@ export default function Dashboard() {
                       <th className="p-4 w-12 text-center">
                         <input
                           type="checkbox"
+                          aria-label="Select all transactions"
                           checked={
                             filteredTransactions.length > 0 &&
                             selectedTxIds.size === filteredTransactions.length
@@ -1510,6 +1620,7 @@ export default function Dashboard() {
                           <td className="p-4 text-center">
                             <input
                               type="checkbox"
+                              aria-label={`Select transaction at ${tx.merchant}`}
                               checked={isSelected}
                               onChange={(e) => {
                                 const next = new Set(selectedTxIds);
@@ -1579,6 +1690,7 @@ export default function Dashboard() {
                                   setEditAmount(tx.amount.toString());
                                 }}
                                 title="Inspect & Edit"
+                                aria-label={`Inspect transaction at ${tx.merchant}`}
                                 className="p-1.5 rounded-full hover:bg-[#e8ebe6] text-[#163300] transition-colors"
                               >
                                 <Eye className="w-4 h-4" />
@@ -1586,6 +1698,7 @@ export default function Dashboard() {
                               <button
                                 onClick={() => handleDeleteTransaction(tx.id)}
                                 title="Delete Record"
+                                aria-label={`Delete transaction at ${tx.merchant}`}
                                 className="p-1.5 rounded-full hover:bg-[#cb272f]/10 text-[#cb272f] transition-colors"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -1996,9 +2109,39 @@ export default function Dashboard() {
                     </span>
                   </div>
 
-                  <div className="bg-[#163300] text-white p-4 rounded-xl font-mono text-xs overflow-x-auto max-h-80">
-                    <pre>{JSON.stringify(simResult, null, 2)}</pre>
-                  </div>
+                  {simResult.analysis ? (
+                    <dl className="grid grid-cols-2 gap-3 text-xs mb-4">
+                      <div className="rounded-xl bg-[#f7f9f6] border border-[#e8ebe6] p-3">
+                        <dt className="font-bold text-[#868685] uppercase text-[10px]">Decision</dt>
+                        <dd className="font-black text-[#163300]">{simResult.analysis.classification}</dd>
+                      </div>
+                      <div className="rounded-xl bg-[#f7f9f6] border border-[#e8ebe6] p-3">
+                        <dt className="font-bold text-[#868685] uppercase text-[10px]">Risk</dt>
+                        <dd className="font-black text-[#163300]">{simResult.analysis.riskScore}/100</dd>
+                      </div>
+                      {simResult.analysis.transaction && (
+                        <>
+                          <div className="rounded-xl bg-[#f7f9f6] border border-[#e8ebe6] p-3">
+                            <dt className="font-bold text-[#868685] uppercase text-[10px]">Merchant</dt>
+                            <dd className="font-bold text-[#163300]">{simResult.analysis.transaction.merchant}</dd>
+                          </div>
+                          <div className="rounded-xl bg-[#f7f9f6] border border-[#e8ebe6] p-3">
+                            <dt className="font-bold text-[#868685] uppercase text-[10px]">Amount</dt>
+                            <dd className="font-bold text-[#163300]">
+                              {formatCurrency(simResult.analysis.transaction.amount, simResult.analysis.transaction.currency)}
+                            </dd>
+                          </div>
+                        </>
+                      )}
+                    </dl>
+                  ) : null}
+
+                  <details className="text-xs">
+                    <summary className="cursor-pointer font-bold text-[#163300]">View raw response (debug)</summary>
+                    <div className="mt-2 bg-[#163300] text-white p-4 rounded-xl font-mono text-xs overflow-x-auto max-h-80">
+                      <pre>{JSON.stringify(simResult, null, 2)}</pre>
+                    </div>
+                  </details>
                 </div>
               )}
             </div>
@@ -2021,10 +2164,21 @@ export default function Dashboard() {
 
       {/* Slide-over Inspector Modal */}
       {inspectedItem && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fadeIn">
-          <div className="an-card bg-white max-w-lg w-full p-6 shadow-float relative max-h-[90vh] overflow-y-auto">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={inspectedItem.type === "transaction" ? "Edit transaction record" : "Alert details"}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fadeIn"
+          onClick={() => setInspectedItem(null)}
+          onKeyDown={(e) => { if (e.key === "Escape") setInspectedItem(null); }}
+        >
+          <div
+            className="an-card bg-white max-w-lg w-full p-6 shadow-float relative max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               onClick={() => setInspectedItem(null)}
+              aria-label="Close inspector"
               className="absolute top-5 right-5 text-[#868685] hover:text-[#163300] p-1 rounded-full hover:bg-[#e8ebe6]"
             >
               <X className="w-5 h-5" />
@@ -2113,10 +2267,20 @@ export default function Dashboard() {
 
       {/* Link Mobile Device Modal */}
       {showLinkModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-[#e8ebe6] relative">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Sync with Android app"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn"
+          onClick={() => setShowLinkModal(false)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-2xl border border-[#e8ebe6] relative"
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               onClick={() => setShowLinkModal(false)}
+              aria-label="Close mobile sync dialog"
               className="absolute top-5 right-5 w-8 h-8 rounded-full bg-[#f7f9f6] flex items-center justify-center text-[#454745] hover:bg-[#e8ebe6] transition-colors cursor-pointer"
             >
               <X className="w-4 h-4" />
@@ -2133,7 +2297,11 @@ export default function Dashboard() {
             </div>
 
             <div className="bg-[#f7f9f6] border border-[#e8ebe6] rounded-2xl p-4 flex flex-col items-center mb-5">
-              {qrCodeUrl ? (
+              {!authToken ? (
+                <p className="text-xs text-[#454745] text-center py-8">
+                  Sign in to generate a pairing code for your Android app.
+                </p>
+              ) : qrCodeUrl ? (
                 <img src={qrCodeUrl} alt="Pairing QR Code" className="w-56 h-56 rounded-xl shadow-sm border border-white" />
               ) : (
                 <div className="w-56 h-56 flex items-center justify-center text-xs text-[#868685]">
@@ -2141,7 +2309,7 @@ export default function Dashboard() {
                 </div>
               )}
               <p className="text-[11px] font-semibold text-[#868685] mt-3 text-center">
-                Open Camera or NotifAi App on your Android device to scan & pair
+                Single-use pairing link. Treat like a password: do not screenshot or share.
               </p>
             </div>
 
@@ -2161,24 +2329,63 @@ export default function Dashboard() {
               </div>
 
               <div className="flex flex-col sm:flex-row gap-2">
-                <a
-                  href={`notifai://oauth/callback?token=${encodeURIComponent(authToken || "mock_clerk_token")}&userId=${encodeURIComponent(userId)}&email=${encodeURIComponent(userEmail)}`}
-                  className="flex-1 bg-[#163300] text-[#9fe870] font-bold py-2.5 px-4 rounded-xl text-center text-xs hover:bg-[#204505] transition-colors flex items-center justify-center gap-2"
-                >
-                  <Smartphone className="w-4 h-4" />
-                  <span>Launch NotifAi App</span>
-                </a>
+                {authToken ? (
+                  <a
+                    href={`notifai://oauth/callback?token=${encodeURIComponent(authToken)}&userId=${encodeURIComponent(userId)}&email=${encodeURIComponent(userEmail)}`}
+                    className="flex-1 bg-[#163300] text-[#9fe870] font-bold py-2.5 px-4 rounded-xl text-center text-xs hover:bg-[#204505] transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Smartphone className="w-4 h-4" />
+                    <span>Launch NotifAi App</span>
+                  </a>
+                ) : (
+                  <p className="flex-1 text-center text-xs text-[#868685] py-2.5">Sign in to enable app launch.</p>
+                )}
                 <button
                   onClick={() => {
-                    const url = `notifai://oauth/callback?token=${encodeURIComponent(authToken || "mock_clerk_token")}&userId=${encodeURIComponent(userId)}&email=${encodeURIComponent(userEmail)}`;
+                    if (!authToken) return;
+                    const url = `notifai://oauth/callback?token=${encodeURIComponent(authToken)}&userId=${encodeURIComponent(userId)}&email=${encodeURIComponent(userEmail)}`;
                     copyText(url, "modal-link");
                   }}
-                  className="bg-[#e8ebe6] text-[#163300] font-bold py-2.5 px-4 rounded-xl text-xs hover:bg-[#d8dbd5] transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  disabled={!authToken}
+                  className="bg-[#e8ebe6] text-[#163300] font-bold py-2.5 px-4 rounded-xl text-xs hover:bg-[#d8dbd5] transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   {copiedId === "modal-link" ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                   <span>{copiedId === "modal-link" ? "Link Copied" : "Copy Deep Link"}</span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation (replaces blocking confirm()) */}
+      {confirmDelete && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Confirm deletion"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fadeIn"
+          onClick={() => setConfirmDelete(null)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-float border border-[#e8ebe6]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-black text-[#163300] mb-2">Delete transactions?</h3>
+            <p className="text-sm text-[#454745] mb-5">{confirmDelete.label}</p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                className="rounded-full px-4 py-2 text-xs font-bold text-[#454745] hover:bg-[#e8ebe6]"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => executeDelete()}
+                className="rounded-full bg-[#cb272f] px-4 py-2 text-xs font-bold text-white hover:bg-[#a31f27]"
+              >
+                Delete
+              </button>
             </div>
           </div>
         </div>

@@ -29,9 +29,14 @@ function MobileAuthContent() {
         try {
           setIsRedirecting(true);
           const sessionToken = await getToken();
+          if (!sessionToken) {
+            console.error("Clerk session token unavailable for mobile pairing.");
+            setIsRedirecting(false);
+            return;
+          }
           const email = user.primaryEmailAddress?.emailAddress || "";
           // Support new notifai:// scheme, while maintaining backward compatibility
-          const targetUrl = `notifai://oauth/callback?token=${encodeURIComponent(sessionToken || "mock_clerk_token")}&userId=${encodeURIComponent(user.id)}&email=${encodeURIComponent(email)}`;
+          const targetUrl = `notifai://oauth/callback?token=${encodeURIComponent(sessionToken)}&userId=${encodeURIComponent(user.id)}&email=${encodeURIComponent(email)}`;
           setToken(sessionToken);
           setRedirectUrl(targetUrl);
 
@@ -160,7 +165,8 @@ function MobileAuthContent() {
       <div className="w-full max-w-sm flex justify-center">
         {authMode === "signup" ? (
           <SignUp
-            routing="hash"
+            path="/auth/mobile"
+            routing="path"
             signInUrl="/auth/mobile?mode=signin"
             forceRedirectUrl="/auth/mobile"
             appearance={{
@@ -176,7 +182,8 @@ function MobileAuthContent() {
           />
         ) : (
           <SignIn
-            routing="hash"
+            path="/auth/mobile"
+            routing="path"
             signUpUrl="/auth/mobile?mode=signup"
             forceRedirectUrl="/auth/mobile"
             appearance={{

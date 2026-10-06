@@ -12,7 +12,6 @@ import com.ainotif.data.remote.CategoryRuleDto
 import com.ainotif.data.remote.AiNotifApiClient
 import com.ainotif.data.remote.CreateTransactionDto
 import com.ainotif.data.remote.ProcessNotificationRequest
-import com.ainotif.data.remote.StatsResponse
 import com.ainotif.data.remote.UpdateTransactionDto
 import com.ainotif.service.FilterDecision
 import com.ainotif.service.HeuristicClassifier
@@ -502,11 +501,5 @@ class TransactionRepository(
             }
         }
         return dismissed
-    }
-
-    suspend fun fetchStats(): Result<StatsResponse> {
-        val token = authManager.getAuthToken()
-            ?: return Result.failure(AuthenticationRequiredException())
-        return apiClient.fetchStats(token)
     }
 }
