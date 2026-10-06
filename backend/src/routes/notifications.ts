@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { classifyNotification, ProcessNotificationSchema } from "../ai/classifier.js";
-import { saveTransaction, saveAlert, saveNotificationAnalysis, getNotificationReviews } from "../db/index.js";
+import { saveTransaction, saveAlert, saveNotificationAnalysis, getNotificationReviews, TransactionIdConflictError } from "../db/index.js";
 
 export const notificationsRouter = new Hono();
 
@@ -36,30 +36,37 @@ notificationsRouter.post("/process-notification", async (c) => {
 
   let savedRecordId: string | null = null;
 
-  if (analysis.decision.warn) {
-    const alert = await saveAlert({
-      userId,
-      rawNotification: `${title ? title + " - " : ""}${text}`,
-      sourcePackage: packageName,
-      riskScore: analysis.riskScore,
-      reason: analysis.scamReason || "Suspicious phishing activity detected",
-      phishingCues: analysis.scamIndicators,
-      timestamp: postTime,
-    });
-    savedRecordId = alert.id;
-  } else if (analysis.decision.saveTransaction && analysis.transaction) {
-    const tx = await saveTransaction({
-      userId,
-      amount: analysis.transaction.amount,
-      currency: analysis.transaction.currency,
-      merchant: analysis.transaction.merchant,
-      category: analysis.transaction.category,
-      type: analysis.transaction.type,
-      rawNotification: `${title ? title + " - " : ""}${text}`,
-      sourcePackage: packageName,
-      timestamp: postTime,
-    });
-    savedRecordId = tx.id;
+  try {
+    if (analysis.decision.warn) {
+      const alert = await saveAlert({
+        userId,
+        rawNotification: `${title ? title + " - " : ""}${text}`,
+        sourcePackage: packageName,
+        riskScore: analysis.riskScore,
+        reason: analysis.scamReason || "Suspicious phishing activity detected",
+        phishingCues: analysis.scamIndicators,
+        timestamp: postTime,
+      });
+      savedRecordId = alert.id;
+    } else if (analysis.decision.saveTransaction && analysis.transaction) {
+      const tx = await saveTransaction({
+        userId,
+        amount: analysis.transaction.amount,
+        currency: analysis.transaction.currency,
+        merchant: analysis.transaction.merchant,
+        category: analysis.transaction.category,
+        type: analysis.transaction.type,
+        rawNotification: `${title ? title + " - " : ""}${text}`,
+        sourcePackage: packageName,
+        timestamp: postTime,
+      });
+      savedRecordId = tx.id;
+    }
+  } catch (err) {
+    if (err instanceof TransactionIdConflictError) {
+      return c.json({ error: "Transaction ID already exists" }, 409);
+    }
+    throw err;
   }
 
   return c.json({

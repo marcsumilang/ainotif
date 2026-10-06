@@ -4,8 +4,8 @@ import { getStats } from "../db/index.js";
 export const statsRouter = new Hono();
 
 statsRouter.get("/", async (c) => {
-  const auth = c.get("auth");
-  const userId = auth?.userId || "user_demo_dev";
+  const userId = c.get("auth")?.userId;
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
 
   const stats = await getStats(userId);
   return c.json(stats);
