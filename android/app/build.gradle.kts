@@ -91,7 +91,6 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
     implementation("io.ktor:ktor-client-content-negotiation:$ktorVersion")
     implementation("io.ktor:ktor-serialization-kotlinx-json:$ktorVersion")
-    implementation("io.ktor:ktor-client-logging:$ktorVersion")
 
     // Kotlinx Serialization & Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
@@ -112,7 +111,7 @@ dependencies {
 
 sentry {
     org.set("smatica-dev")
-    projectName.set("notifai-android")
+    projectName.set("ainotif-android")
 
     // this will upload your source code to Sentry to show it as part of the stack traces
     // disable if you don't want to expose your sources

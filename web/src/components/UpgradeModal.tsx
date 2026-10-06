@@ -20,6 +20,7 @@ export function UpgradeModal({
   onPlanChanged,
 }: UpgradeModalProps) {
   const [isUpgradingDev, setIsUpgradingDev] = useState(false);
+  const showDevUpgrade = process.env.NEXT_PUBLIC_SHOW_DEV_BILLING === "true";
 
   if (!isOpen) return null;
 
@@ -45,13 +46,23 @@ export function UpgradeModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-[#e8ebe6] relative overflow-hidden">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Upgrade to Pro Guardian"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-[#e8ebe6] relative overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Decorative Top Gradient */}
         <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-[#163300] via-[#9fe870] to-[#163300]" />
 
         <button
           onClick={onClose}
+          aria-label="Close upgrade dialog"
           className="absolute top-5 right-5 w-8 h-8 rounded-full bg-[#f7f9f6] flex items-center justify-center text-[#454745] hover:bg-[#e8ebe6] transition-colors cursor-pointer"
         >
           <X className="w-4 h-4" />
@@ -76,7 +87,7 @@ export function UpgradeModal({
         </div>
 
         {/* Value Proposition Box */}
-        <div className="bg-[#f7f9f6] border border-[#e8ebe6] rounded-2xl p-4.5 mb-5">
+        <div className="bg-[#f7f9f6] border border-[#e8ebe6] rounded-2xl p-4 mb-5">
           <div className="flex items-baseline justify-between mb-3 border-b border-[#e8ebe6] pb-2.5">
             <div>
               <span className="text-2xl font-black text-[#163300]">$10</span>
@@ -114,7 +125,8 @@ export function UpgradeModal({
             <ArrowRight className="w-4 h-4" />
           </button>
 
-          {/* Quick Dev Switcher Button for Instant Testing */}
+          {/* Quick Dev Switcher Button for Instant Testing (dev only) */}
+          {showDevUpgrade && (
           <button
             onClick={handleDevUpgrade}
             disabled={isUpgradingDev}
@@ -127,6 +139,7 @@ export function UpgradeModal({
             )}
             <span>Instant Test: Unlock Pro ($10 Plan) Now</span>
           </button>
+          )}
         </div>
 
         <p className="text-[11px] text-[#868685] text-center mt-4">

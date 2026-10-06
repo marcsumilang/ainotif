@@ -20,7 +20,7 @@ export default function SignUpPage() {
           path="/sign-up"
           routing="path"
           signInUrl="/sign-in"
-          fallbackRedirectUrl="/dashboard"
+          forceRedirectUrl="/dashboard"
           appearance={{
             elements: {
               card: "bg-white border border-[#e8ebe6] shadow-xl text-[#163300] rounded-3xl",

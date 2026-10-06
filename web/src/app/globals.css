@@ -123,3 +123,35 @@ body {
   background-color: #f7f9f6;
   border-color: #163300;
 }
+
+/* Motion + elevation utilities referenced across dashboard/modals */
+@keyframes an-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes an-slide-down {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: an-fade-in 0.18s ease-out;
+}
+
+.animate-slideDown {
+  animation: an-slide-down 0.22s ease-out;
+}
+
+.shadow-float {
+  box-shadow: 0 12px 32px rgba(22, 51, 0, 0.14);
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}

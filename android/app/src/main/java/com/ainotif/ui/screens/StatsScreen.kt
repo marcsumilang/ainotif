@@ -22,11 +22,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ainotif.data.local.entity.TransactionEntity
-import com.ainotif.data.remote.StatsResponse
 import com.ainotif.data.repository.TransactionRepository
 import com.ainotif.util.CurrencyConverter
 import kotlinx.coroutines.launch
-import java.util.Calendar
 
 private val CHART_COLORS = listOf(
     com.ainotif.ui.theme.WiseForestInk,
@@ -52,6 +50,7 @@ fun StatsScreen(
 
     var selectedPeriod by remember { mutableStateOf("30D") } // 7D, 30D, 90D, YTD, ALL
     var isRefreshing by remember { mutableStateOf(false) }
+    var syncError by remember { mutableStateOf<String?>(null) }
 
     // Defensive UI deduplication: remove exact duplicate rows if any exist in the database
     val distinctTransactions = remember(transactions) {
@@ -60,21 +59,14 @@ fun StatsScreen(
 
     // Filter transactions based on selected period
     val periodTransactions = remember(distinctTransactions, selectedPeriod) {
+        val zone = java.time.ZoneId.systemDefault()
         val now = System.currentTimeMillis()
-        val calendar = Calendar.getInstance()
         val cutoff = when (selectedPeriod) {
             "7D" -> now - 7L * 24 * 3600 * 1000
             "30D" -> now - 30L * 24 * 3600 * 1000
             "90D" -> now - 90L * 24 * 3600 * 1000
-            "YTD" -> {
-                calendar.apply {
-                    set(Calendar.MONTH, Calendar.JANUARY)
-                    set(Calendar.DAY_OF_MONTH, 1)
-                    set(Calendar.HOUR_OF_DAY, 0)
-                    set(Calendar.MINUTE, 0)
-                    set(Calendar.SECOND, 0)
-                }.timeInMillis
-            }
+            "YTD" -> java.time.LocalDate.now(zone).withDayOfYear(1)
+                .atStartOfDay(zone).toInstant().toEpochMilli()
             else -> 0L // ALL
         }
         distinctTransactions.filter { it.timestamp >= cutoff }
@@ -128,8 +120,9 @@ fun StatsScreen(
                         onClick = {
                             coroutineScope.launch {
                                 isRefreshing = true
-                                repository.syncWithBackend()
+                                val result = repository.syncWithBackend()
                                 isRefreshing = false
+                                syncError = result.exceptionOrNull()?.message
                             }
                         }
                     ) {
@@ -171,6 +164,16 @@ fun StatsScreen(
                             colors = chipColors
                         )
                     }
+                }
+            }
+
+            if (syncError != null) {
+                item {
+                    Text(
+                        text = "Sync failed: $syncError",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             }
 

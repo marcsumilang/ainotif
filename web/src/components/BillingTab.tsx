@@ -39,6 +39,7 @@ export function BillingTab({
   const freeLimit = PLAN_LIMITS.free.maxNotifications;
   const isPro = currentPlan === "pro";
   const usagePercent = isPro ? 100 : Math.min(100, Math.round((notificationCount / freeLimit) * 100));
+  const showDevSwitcher = process.env.NEXT_PUBLIC_SHOW_DEV_BILLING === "true";
 
   const handleTogglePlan = async (target: PlanType) => {
     setIsUpdating(true);
@@ -122,7 +123,8 @@ export function BillingTab({
           </div>
         </div>
 
-        {/* Quick Developer Plan Switcher for immediate testing */}
+        {/* Quick Developer Plan Switcher for immediate testing (dev only) */}
+        {showDevSwitcher && (
         <div className="mt-6 pt-5 border-t border-[#e8ebe6] flex flex-col sm:flex-row items-center justify-between gap-3 bg-[#f7f9f6] -mx-6 -mb-6 p-4 px-6 sm:px-8">
           <div className="flex items-center gap-2 text-xs text-[#454745]">
             <Sliders className="w-4 h-4 text-[#163300]" />
@@ -155,6 +157,7 @@ export function BillingTab({
             </button>
           </div>
         </div>
+        )}
       </div>
 
       {/* Plan Comparison Cards */}

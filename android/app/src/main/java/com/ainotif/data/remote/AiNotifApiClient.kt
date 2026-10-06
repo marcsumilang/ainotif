@@ -117,4 +117,8 @@ class AiNotifApiClient(
         }
         response.status.isSuccess()
     }
+
+    fun close() {
+        client.close()
+    }
 }

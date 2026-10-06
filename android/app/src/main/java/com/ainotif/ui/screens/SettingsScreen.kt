@@ -1097,7 +1097,7 @@ fun SettingsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    val url = if (backendUrl.isNotBlank()) "$backendUrl/privacy" else "https://notifai.app/privacy"
+                                    val url = if (backendUrl.isNotBlank()) "$backendUrl/privacy" else "https://ainotif-web.marcsumilang.workers.dev/privacy"
                                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
                                     context.startActivity(intent)
                                 }
@@ -1116,7 +1116,7 @@ fun SettingsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    val url = if (backendUrl.isNotBlank()) "$backendUrl/terms" else "https://notifai.app/terms"
+                                    val url = if (backendUrl.isNotBlank()) "$backendUrl/terms" else "https://ainotif-web.marcsumilang.workers.dev/terms"
                                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
                                     context.startActivity(intent)
                                 }
@@ -1135,7 +1135,7 @@ fun SettingsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    val url = if (backendUrl.isNotBlank()) "$backendUrl/delete-account" else "https://notifai.app/delete-account"
+                                    val url = if (backendUrl.isNotBlank()) "$backendUrl/delete-account" else "https://ainotif-web.marcsumilang.workers.dev/delete-account"
                                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
                                     context.startActivity(intent)
                                 }
@@ -1186,7 +1186,7 @@ fun SettingsScreen(
             // ==========================================
             if (isDevModeUnlocked || BuildConfig.DEBUG) {
                 item {
-                    SectionHeader("🛠️ Developer Options (Debug Only)")
+                    SectionHeader("Developer Options (Debug Only)")
                 }
 
                 // Backend Service URL Configuration
@@ -1359,11 +1359,11 @@ fun SettingsScreen(
                                         )
                                         simOutcomeMessage = when (outcome) {
                                             is ProcessNotificationOutcome.ParsedTransaction ->
-                                                "✅ Parsed Transaction: ${outcome.transaction.amount} ${outcome.transaction.currency} (${outcome.transaction.category})"
+                                                "Parsed Transaction: ${outcome.transaction.amount} ${outcome.transaction.currency} (${outcome.transaction.category})"
                                             is ProcessNotificationOutcome.InterceptedScam ->
-                                                "🚨 Intercepted Phishing: ${outcome.alert.reason} (${outcome.alert.riskScore}%)"
+                                                "Intercepted Phishing: ${outcome.alert.reason} (${outcome.alert.riskScore}%)"
                                             is ProcessNotificationOutcome.DroppedSecurityCode ->
-                                                "🛡️ Dropped Sensitive OTP on-device"
+                                                "Dropped Sensitive OTP on-device"
                                             is ProcessNotificationOutcome.Ignored -> "Bypassed / Ignored"
                                             is ProcessNotificationOutcome.ReviewRequired -> "Review needed: ${outcome.reason}"
                                             is ProcessNotificationOutcome.Error -> "❌ Error: ${outcome.message}"
@@ -1506,7 +1506,7 @@ fun SettingsScreen(
             confirmButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = {
-                        val url = if (backendUrl.isNotBlank()) "$backendUrl/privacy" else "https://notifai.app/privacy"
+                        val url = if (backendUrl.isNotBlank()) "$backendUrl/privacy" else "https://ainotif-web.marcsumilang.workers.dev/privacy"
                         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
                         context.startActivity(intent)
                         showPrivacyPolicyDialog = false

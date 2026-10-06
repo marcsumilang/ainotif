@@ -95,10 +95,8 @@ export default function LandingPage() {
   const [copiedLink, setCopiedLink] = useState(false);
 
   useEffect(() => {
-    // Generate QR code for mobile pairing or APK download
-    const apkDownloadUrl = typeof window !== "undefined"
-      ? `${window.location.origin}/notifai-debug.apk`
-      : "https://notifai.app/notifai-debug.apk";
+    // QR points at the public release channel, not a local debug artifact.
+    const apkDownloadUrl = "https://github.com/marcsumilang/ainotif/releases";
 
     QRCode.toDataURL(apkDownloadUrl, {
       width: 200,
@@ -109,9 +107,20 @@ export default function LandingPage() {
       .catch((err) => console.error("Error generating QR:", err));
   }, []);
 
-  const handleCopyApkLink = () => {
-    const apkDownloadUrl = `${window.location.origin}/notifai-debug.apk`;
-    navigator.clipboard.writeText(apkDownloadUrl);
+  const handleCopyApkLink = async () => {
+    const apkDownloadUrl = "https://github.com/marcsumilang/ainotif/releases";
+    try {
+      await navigator.clipboard.writeText(apkDownloadUrl);
+    } catch {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = apkDownloadUrl;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      } catch { /* clipboard unavailable */ }
+    }
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
   };
@@ -147,10 +156,10 @@ export default function LandingPage() {
             <a href="#pricing" className="px-3.5 py-1.5 rounded-full hover:bg-white transition-colors">
               Pricing
             </a>
-            <a href="#security" className="px-3.5 py-1.5 rounded-full hover:bg-white transition-colors">
+            <a href="/security" className="px-3.5 py-1.5 rounded-full hover:bg-white transition-colors">
               Zero-Knowledge Security
             </a>
-            <a href="#compliance" className="px-3.5 py-1.5 rounded-full hover:bg-white transition-colors">
+            <a href="#download" className="px-3.5 py-1.5 rounded-full hover:bg-white transition-colors">
               Google Play Ready
             </a>
           </nav>
@@ -355,7 +364,6 @@ export default function LandingPage() {
                     : "bg-white text-[#454745] border border-[#d4d8cf] hover:border-[#163300]"
                 }`}
               >
-                {sample.isThreat ? "🚨 " : "💳 "}
                 {sample.merchant}
               </button>
             ))}
@@ -583,12 +591,13 @@ export default function LandingPage() {
 
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 pt-2">
                   <a
-                    href="/notifai-debug.apk"
-                    download="NotifAi-release.apk"
+                    href="https://github.com/marcsumilang/ainotif/releases"
+                    target="_blank"
+                    rel="noreferrer"
                     className="bg-[#9fe870] text-[#163300] hover:bg-[#8ed662] font-black text-sm px-8 py-4 rounded-full transition-all shadow-md flex items-center justify-center gap-2.5"
                   >
                     <Download className="w-5 h-5 text-[#163300] stroke-[2.5]" />
-                    <span>Download APK Directly (21 MB)</span>
+                    <span>Get the Android APK</span>
                   </a>
 
                   <button

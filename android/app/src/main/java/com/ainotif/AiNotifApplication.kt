@@ -60,6 +60,11 @@ class AiNotifApplication : Application() {
         createNotificationChannels()
     }
 
+    override fun onTerminate() {
+        super.onTerminate()
+        runCatching { apiClient.close() }
+    }
+
     private fun createNotificationChannels() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val scamChannel = NotificationChannel(

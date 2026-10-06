@@ -586,7 +586,7 @@ fun TransactionItemCard(
                 if (!tx.note.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "📝 ${tx.note}",
+                        text = tx.note,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
                     )
@@ -810,18 +810,11 @@ fun TransactionDetailBottomSheet(
 }
 
 private fun groupTransactionsByDate(transactions: List<TransactionEntity>): Map<String, List<TransactionEntity>> {
-    val calendar = Calendar.getInstance()
-    val todayStart = calendar.apply {
-        set(Calendar.HOUR_OF_DAY, 0)
-        set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
-    }.timeInMillis
-
-    val yesterdayStart = todayStart - 24 * 3600 * 1000
-    val startOfMonth = calendar.apply {
-        set(Calendar.DAY_OF_MONTH, 1)
-    }.timeInMillis
+    val zone = java.time.ZoneId.systemDefault()
+    val today = java.time.LocalDate.now(zone)
+    val todayStart = today.atStartOfDay(zone).toInstant().toEpochMilli()
+    val yesterdayStart = today.minusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+    val startOfMonth = today.withDayOfMonth(1).atStartOfDay(zone).toInstant().toEpochMilli()
 
     val groups = linkedMapOf<String, MutableList<TransactionEntity>>()
     for (tx in transactions) {
