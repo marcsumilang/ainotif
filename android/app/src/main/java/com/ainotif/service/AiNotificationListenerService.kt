@@ -21,6 +21,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicInteger
 
 class AiNotificationListenerService : NotificationListenerService() {
 
@@ -127,13 +128,13 @@ class AiNotificationListenerService : NotificationListenerService() {
                     true
                 }
                 is ProcessNotificationOutcome.InterceptedScam -> {
-                    Log.w(TAG, "🚨 Intercepted Scam (${outcome.alert.riskScore}% risk): ${outcome.alert.reason}")
-                    
+                    Log.w(TAG, "Intercepted Scam (${outcome.alert.riskScore}% risk): ${outcome.alert.reason}")
+
                     // Auto-hide the original malicious notification from the Android status bar/shade
                     if (app.preferencesManager.isAutoHideMaliciousNotifEnabled.value && NotificationActionPolicy.canHideNotification(outcome.aiResult)) {
                         try {
                             cancelNotification(sbn.key)
-                            Log.i(TAG, "🛡️ Auto-hid malicious notification from system shade: ${sbn.key}")
+                            Log.i(TAG, "Auto-hid malicious notification from system shade: ${sbn.key}")
                         } catch (e: Exception) {
                             Log.e(TAG, "Failed to auto-hide malicious notification from shade", e)
                         }
@@ -163,28 +164,45 @@ class AiNotificationListenerService : NotificationListenerService() {
         val app = AiNotifApplication.instance
         val anomalyLimit = app.preferencesManager.anomalyThreshold.value
         val monthlyBudget = app.preferencesManager.monthlyBudget.value
+        val baseCurrency = try {
+            app.preferencesManager.baseCurrency.value
+        } catch (_: Exception) {
+            tx.currency
+        }
 
         val formattedAmount = CurrencyConverter.format(tx.amount, tx.currency)
+        val formattedLimit = CurrencyConverter.format(anomalyLimit, baseCurrency)
+        val formattedBudget = CurrencyConverter.format(monthlyBudget, baseCurrency)
 
-        // 1. Check Anomaly Limit for single charge
-        if (tx.amount >= anomalyLimit) {
+        // 1. Check Anomaly Limit for single charge (converted to base currency)
+        val txInBase = CurrencyConverter.convert(tx.amount, tx.currency, baseCurrency) ?: tx.amount
+        val anomalyInBase = CurrencyConverter.convert(anomalyLimit, baseCurrency, baseCurrency) ?: anomalyLimit
+        if (txInBase >= anomalyInBase) {
             postAnomalyNotification(
-                title = "🚨 Large Spending Anomaly Detected",
-                message = "Charge of $formattedAmount at ${tx.merchant} exceeds your $${String.format(Locale.US, "%.0f", anomalyLimit)} threshold."
+                title = "Large Spending Anomaly Detected",
+                message = "Charge of $formattedAmount at ${tx.merchant} exceeds your $formattedLimit threshold."
             )
         }
 
-        // 2. Check Monthly Budget Limit
-        val totalDebit = app.database.transactionDao().getTotalDebit() ?: 0.0
-        if (monthlyBudget > 0 && totalDebit >= monthlyBudget) {
+        // 2. Check Monthly Budget Limit (current calendar month only)
+        val monthStart = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.DAY_OF_MONTH, 1)
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val totalDebitMonth = app.database.transactionDao().getTotalDebitSince(monthStart) ?: 0.0
+        val totalDebitMonthFormatted = String.format(Locale.US, "%.2f", totalDebitMonth)
+        if (monthlyBudget > 0 && totalDebitMonth >= monthlyBudget) {
             postAnomalyNotification(
-                title = "⚠️ Monthly Budget Exceeded",
-                message = "You have spent $${String.format(Locale.US, "%.2f", totalDebit)}, reaching 100% of your $${String.format(Locale.US, "%.0f", monthlyBudget)} budget!"
+                title = "Monthly Budget Exceeded",
+                message = "You have spent $totalDebitMonthFormatted, reaching 100% of your $formattedBudget budget."
             )
-        } else if (monthlyBudget > 0 && totalDebit >= monthlyBudget * 0.8) {
+        } else if (monthlyBudget > 0 && totalDebitMonth >= monthlyBudget * 0.8) {
             postAnomalyNotification(
-                title = "⚠️ 80% Monthly Budget Warning",
-                message = "You have reached 80% of your monthly budget ($${String.format(Locale.US, "%.2f", totalDebit)} / $${String.format(Locale.US, "%.0f", monthlyBudget)})."
+                title = "80% Monthly Budget Warning",
+                message = "You have reached 80% of your monthly budget ($totalDebitMonthFormatted / $formattedBudget)."
             )
         }
     }
@@ -197,7 +215,7 @@ class AiNotificationListenerService : NotificationListenerService() {
 
         val pendingIntent = PendingIntent.getActivity(
             this,
-            (System.currentTimeMillis() % 1000).toInt(),
+            notificationIdCounter.incrementAndGet(),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -213,11 +231,11 @@ class AiNotificationListenerService : NotificationListenerService() {
             .build()
 
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-        notificationManager.notify((System.currentTimeMillis() % 10000).toInt() + 10000, notification)
+        notificationManager.notify(notificationIdCounter.incrementAndGet(), notification)
     }
 
     private fun postScamWarningNotification(alert: AlertEntity) {
-        val notifId = (System.currentTimeMillis() % 10000).toInt()
+        val notifId = notificationIdCounter.incrementAndGet()
 
         // Content intent -> opens Radar screen
         val openRadarIntent = Intent(this, MainActivity::class.java).apply {
@@ -244,11 +262,12 @@ class AiNotificationListenerService : NotificationListenerService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Action 2: Share warning with family/friends
+        // Action 2: Share warning with family/friends (defanged: no tappable phishing links)
+        val defanged = defangUrls(alert.rawNotification)
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, "⚠️ Phishing Scam Warning Intercepted by NotifAi")
-            putExtra(Intent.EXTRA_TEXT, "Scam Warning intercepted by NotifAi: ${alert.reason}\n\nDeceptive message: \"${alert.rawNotification}\"")
+            putExtra(Intent.EXTRA_SUBJECT, "Phishing Scam Warning Intercepted by NotifAi")
+            putExtra(Intent.EXTRA_TEXT, "Scam Warning intercepted by NotifAi: ${alert.reason}\n\nDeceptive message (links defanged, do not open): \"$defanged\"")
         }
         val shareChooser = Intent.createChooser(shareIntent, "Share Scam Warning")
         val sharePendingIntent = PendingIntent.getActivity(
@@ -260,9 +279,9 @@ class AiNotificationListenerService : NotificationListenerService() {
 
         val notification = NotificationCompat.Builder(this, AiNotifApplication.SCAM_ALERT_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
-            .setContentTitle("⚠️ Suspicious Scam Intercepted (${alert.riskScore}% Risk)")
+            .setContentTitle("Suspicious Scam Intercepted (${alert.riskScore}% Risk)")
             .setContentText(alert.reason)
-            .setStyle(NotificationCompat.BigTextStyle().bigText("NotifAi Warning: ${alert.reason}\n\nOriginal Text: ${alert.rawNotification}"))
+            .setStyle(NotificationCompat.BigTextStyle().bigText("NotifAi Warning: ${alert.reason}\n\nOriginal Text: ${defangUrls(alert.rawNotification)}"))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(openRadarPendingIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Dismiss", dismissPendingIntent)
@@ -281,7 +300,7 @@ class AiNotificationListenerService : NotificationListenerService() {
                 delay(autoHideDelay * 1000L)
                 try {
                     notificationManager.cancel(notifId)
-                    Log.d(TAG, "🛡️ Auto-dismissed scam warning notification (id=$notifId) after ${autoHideDelay}s")
+                    Log.d(TAG, "Auto-dismissed scam warning notification (id=$notifId) after ${autoHideDelay}s")
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to auto-dismiss scam warning notification", e)
                 }
@@ -300,6 +319,15 @@ class AiNotificationListenerService : NotificationListenerService() {
     companion object {
         private const val TAG = "AiNotifListener"
         private val recentNotificationTimestamps = java.util.concurrent.ConcurrentHashMap<String, Long>()
+        private val notificationIdCounter = AtomicInteger((System.currentTimeMillis() % 100000).toInt())
+
+        /** Defang URLs so shared warnings are not tappable phishing links. */
+        fun defangUrls(text: String): String {
+            return text
+                .replace("http://", "hxxp://")
+                .replace("https://", "hxxps://")
+                .replace(".", "[.]")
+        }
 
         @Volatile
         var instance: AiNotificationListenerService? = null

@@ -6,6 +6,7 @@ import java.util.Locale
 object CurrencyConverter {
 
     // Exchange rates relative to 1 USD
+    // Covers every currency accepted by backend classifier + offline policy.
     private val RATES_TO_USD = mapOf(
         "USD" to 1.0,
         "EUR" to 1.08,   // 1 EUR = 1.08 USD
@@ -15,7 +16,10 @@ object CurrencyConverter {
         "AUD" to 0.65,   // 1 AUD = 0.65 USD
         "JPY" to 0.0065, // 1 JPY = 0.0065 USD (~153.8 JPY per USD)
         "INR" to 0.012,  // 1 INR = 0.012 USD (~83.3 INR per USD)
-        "SGD" to 0.75    // 1 SGD = 0.75 USD
+        "SGD" to 0.75,   // 1 SGD = 0.75 USD
+        "NZD" to 0.61,   // 1 NZD = 0.61 USD
+        "CHF" to 1.12,   // 1 CHF = 1.12 USD
+        "HKD" to 0.128   // 1 HKD = 0.128 USD
     )
 
     private val SYMBOLS = mapOf(
@@ -27,10 +31,13 @@ object CurrencyConverter {
         "AUD" to "A$",
         "JPY" to "¥",
         "INR" to "₹",
-        "SGD" to "S$"
+        "SGD" to "S$",
+        "NZD" to "NZ$",
+        "CHF" to "CHF ",
+        "HKD" to "HK$"
     )
 
-    val SUPPORTED_CURRENCIES = listOf("USD", "EUR", "GBP", "PHP", "CAD", "AUD", "JPY", "INR", "SGD")
+    val SUPPORTED_CURRENCIES = listOf("USD", "EUR", "GBP", "PHP", "CAD", "AUD", "JPY", "INR", "SGD", "NZD", "CHF", "HKD")
 
     fun convert(amount: Double, fromCurrency: String, toCurrency: String): Double? {
         if (fromCurrency.equals(toCurrency, ignoreCase = true)) return amount

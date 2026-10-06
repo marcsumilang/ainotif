@@ -2,14 +2,31 @@ package com.ainotif.auth
 
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.net.Uri
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 class ClerkAuthManager(context: Context) {
-    private val prefs = context.getSharedPreferences("ainotif_clerk_auth", Context.MODE_PRIVATE)
+    private val prefs: SharedPreferences = try {
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        EncryptedSharedPreferences.create(
+            context,
+            "ainotif_clerk_auth_enc",
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    } catch (_: Exception) {
+        // Fall back to private prefs only if encrypted storage is unavailable.
+        context.getSharedPreferences("ainotif_clerk_auth", Context.MODE_PRIVATE)
+    }
 
     private val _userState = MutableStateFlow<UserState>(loadCurrentState())
     val userState: StateFlow<UserState> = _userState.asStateFlow()
@@ -32,10 +49,14 @@ class ClerkAuthManager(context: Context) {
         }
     }
 
+    /**
+     * Real backend token only. Demo sessions return null so repositories stay
+     * offline instead of sending mock bearers that the server rejects (401).
+     */
     fun getAuthToken(): String? {
         return when (val state = _userState.value) {
             is UserState.SignedIn -> state.token
-            is UserState.DemoUser -> state.token
+            is UserState.DemoUser -> null
             UserState.SignedOut -> null
         }
     }

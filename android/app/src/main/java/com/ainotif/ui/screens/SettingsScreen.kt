@@ -102,6 +102,30 @@ fun SettingsScreen(
         }
     }
 
+    var isPostNotifGranted by remember {
+        mutableStateOf(
+            if (android.os.Build.VERSION.SDK_INT >= 33) {
+                androidx.core.content.ContextCompat.checkSelfPermission(
+                    context, Manifest.permission.POST_NOTIFICATIONS
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            } else true
+        )
+    }
+    val postNotifLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        isPostNotifGranted = isGranted
+        if (!isGranted) {
+            Toast.makeText(context, "Allow notifications to receive scam and budget alerts", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (android.os.Build.VERSION.SDK_INT >= 33 && !isPostNotifGranted) {
+            postNotifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     // Version 7-tap counter
     var versionTapCount by remember { mutableIntStateOf(0) }
 
@@ -582,10 +606,13 @@ fun SettingsScreen(
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                 )
                             }
-                            Switch(
-                                checked = false,
-                                enabled = false,
-                                onCheckedChange = { }
+                            Text(
+                                "Paused",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                modifier = Modifier
+                                    .padding(start = 8.dp)
                             )
                         }
 
@@ -818,8 +845,14 @@ fun SettingsScreen(
                             Button(
                                 onClick = {
                                     coroutineScope.launch {
-                                        repository.syncWithBackend()
-                                        Toast.makeText(context, "Sync complete", Toast.LENGTH_SHORT).show()
+                                        val result = repository.syncWithBackend()
+                                        val msg = if (result.isSuccess) {
+                                            "Sync complete"
+                                        } else {
+                                            val reason = result.exceptionOrNull()?.message
+                                            if (reason != null) "Sync failed: $reason" else "Sync failed. Sign in to sync cloud data."
+                                        }
+                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                     }
                                 },
                                 shape = RoundedCornerShape(percent = 50),
@@ -1128,7 +1161,7 @@ fun SettingsScreen(
                                     versionTapCount++
                                     if (versionTapCount == 7) {
                                         prefs.setDeveloperModeUnlocked(true)
-                                        Toast.makeText(context, "🛠️ Developer Options Unlocked!", Toast.LENGTH_LONG).show()
+                                        Toast.makeText(context, "Developer Options Unlocked", Toast.LENGTH_LONG).show()
                                     } else if (versionTapCount in 3..6) {
                                         Toast.makeText(context, "${7 - versionTapCount} more taps to unlock developer options", Toast.LENGTH_SHORT).show()
                                     }
@@ -1139,7 +1172,7 @@ fun SettingsScreen(
                         ) {
                             Text("App Version", fontWeight = FontWeight.SemiBold)
                             Text(
-                                "v1.0.0 (Build 42)${if (isDevModeUnlocked) " [DEV]" else ""}",
+                                "v${com.ainotif.BuildConfig.VERSION_NAME} (Build ${com.ainotif.BuildConfig.VERSION_CODE})${if (isDevModeUnlocked) " [DEV]" else ""}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                             )
@@ -1176,9 +1209,17 @@ fun SettingsScreen(
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(
                                     onClick = {
-                                        prefs.setBackendUrl(customUrlInput)
-                                        apiClient.baseUrl = customUrlInput
-                                        Toast.makeText(context, "Base URL updated", Toast.LENGTH_SHORT).show()
+                                        val normalized = customUrlInput.trim().trimEnd('/')
+                                        if (normalized.isBlank()) {
+                                            Toast.makeText(context, "URL cannot be empty", Toast.LENGTH_SHORT).show()
+                                        } else if (!normalized.startsWith("https://") && !normalized.startsWith("http://")) {
+                                            Toast.makeText(context, "URL must start with https:// (http only for local dev)", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            prefs.setBackendUrl(normalized)
+                                            apiClient.baseUrl = normalized
+                                            customUrlInput = normalized
+                                            Toast.makeText(context, "Base URL updated", Toast.LENGTH_SHORT).show()
+                                        }
                                     },
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
@@ -1757,21 +1798,38 @@ fun SettingsScreen(
                                 if (token.isNotBlank() && userId.isNotBlank()) {
                                     authManager.setSession(userId, email, token)
                                     coroutineScope.launch {
-                                        repository.syncWithBackend()
-                                        Toast.makeText(context, "Connected to Clerk ($userId) & Synced!", Toast.LENGTH_SHORT).show()
+                                        val result = repository.syncWithBackend()
+                                        val msg = if (result.isSuccess) {
+                                            "Connected to Clerk ($userId) & Synced!"
+                                        } else {
+                                            "Paired ($userId). Cloud sync needs network: ${result.exceptionOrNull()?.message ?: "unavailable"}"
+                                        }
+                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                     }
                                     showManualTokenDialog = false
+                                    return@Button
+                                } else {
+                                    Toast.makeText(context, "Link is missing token or userId", Toast.LENGTH_SHORT).show()
                                     return@Button
                                 }
                             } catch (_: Exception) {}
                         }
-                        val finalToken = input.ifBlank { "mock_clerk_token" }
-                        val finalUserId = manualUserIdInput.trim().ifBlank { "user_demo_mobile" }
-                        val finalEmail = manualEmailInput.trim().ifBlank { "demo@ainotif.local" }
-                        authManager.setSession(finalUserId, finalEmail, finalToken)
+                        val rawToken = input.ifBlank { manualInputText.trim() }
+                        val finalUserId = manualUserIdInput.trim()
+                        val finalEmail = manualEmailInput.trim()
+                        if (rawToken.isBlank() || finalUserId.isBlank()) {
+                            Toast.makeText(context, "Token and Clerk User ID are required (no demo session created)", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        authManager.setSession(finalUserId, finalEmail, rawToken)
                         coroutineScope.launch {
-                            repository.syncWithBackend()
-                            Toast.makeText(context, "Connected to Clerk ($finalUserId) & Synced!", Toast.LENGTH_SHORT).show()
+                            val result = repository.syncWithBackend()
+                            val msg = if (result.isSuccess) {
+                                "Connected to Clerk ($finalUserId) & Synced!"
+                            } else {
+                                "Paired ($finalUserId). Cloud sync needs network: ${result.exceptionOrNull()?.message ?: "unavailable"}"
+                            }
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                         }
                         showManualTokenDialog = false
                     }

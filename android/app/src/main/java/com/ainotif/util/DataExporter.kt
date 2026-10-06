@@ -2,12 +2,14 @@ package com.ainotif.util
 
 import android.content.Context
 import android.content.Intent
+import androidx.core.content.FileProvider
 import com.ainotif.data.local.entity.TransactionEntity
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -63,10 +65,18 @@ object DataExporter {
     }
 
     fun shareExport(context: Context, content: String, mimeType: String, subject: String) {
+        // Write to a cache file and share via FileProvider so large exports do
+        // not hit TransactionTooLargeException from Intent extras.
+        val safeName = subject.replace(Regex("[^A-Za-z0-9._-]"), "_").take(64).ifBlank { "export" }
+        val dir = File(context.cacheDir, "exports").apply { mkdirs() }
+        val file = File(dir, safeName)
+        file.writeText(content)
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         val sendIntent = Intent(Intent.ACTION_SEND).apply {
             type = mimeType
             putExtra(Intent.EXTRA_SUBJECT, subject)
-            putExtra(Intent.EXTRA_TEXT, content)
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         val chooser = Intent.createChooser(sendIntent, "Export NotifAi Data")
         chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

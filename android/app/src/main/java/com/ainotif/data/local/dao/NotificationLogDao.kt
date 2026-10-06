@@ -14,6 +14,9 @@ interface NotificationLogDao {
     @Insert
     suspend fun insertLog(log: NotificationLogEntity): Long
 
+    @Query("DELETE FROM notification_logs WHERE id NOT IN (SELECT id FROM notification_logs ORDER BY timestamp DESC LIMIT 500)")
+    suspend fun pruneOldLogs()
+
     @Query("DELETE FROM notification_logs")
     suspend fun clearLogs()
 }

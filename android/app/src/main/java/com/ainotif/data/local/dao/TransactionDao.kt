@@ -43,13 +43,16 @@ interface TransactionDao {
     @Query("SELECT SUM(amount) FROM transactions WHERE type = 'DEBIT'")
     suspend fun getTotalDebit(): Double?
 
+    @Query("SELECT SUM(amount) FROM transactions WHERE type = 'DEBIT' AND timestamp >= :sinceTimestamp")
+    suspend fun getTotalDebitSince(sinceTimestamp: Long): Double?
+
     @Query("SELECT SUM(amount) FROM transactions WHERE type = 'CREDIT'")
     suspend fun getTotalCredit(): Double?
 
     @Query("SELECT EXISTS(SELECT 1 FROM transactions WHERE rawNotification = :rawNotification AND ABS(timestamp - :timestamp) <= :toleranceMs LIMIT 1)")
     suspend fun hasSimilarTransaction(rawNotification: String, timestamp: Long, toleranceMs: Long = 300000L): Boolean
 
-    @Query("SELECT EXISTS(SELECT 1 FROM transactions WHERE (rawNotification = :rawNotification OR (ABS(amount - :amount) < 0.001 AND currency = :currency AND merchant = :merchant)) AND ABS(timestamp - :timestamp) <= :toleranceMs LIMIT 1)")
+    @Query("SELECT EXISTS(SELECT 1 FROM transactions WHERE (rawNotification = :rawNotification OR (ABS(amount - :amount) < 0.001 AND currency = :currency AND LOWER(merchant) = LOWER(:merchant))) AND ABS(timestamp - :timestamp) <= :toleranceMs LIMIT 1)")
     suspend fun hasSimilarTransactionExact(
         rawNotification: String,
         amount: Double,
@@ -59,7 +62,7 @@ interface TransactionDao {
         toleranceMs: Long = 300000L
     ): Boolean
 
-    @Query("SELECT * FROM transactions WHERE (rawNotification = :rawNotification OR (ABS(amount - :amount) < 0.001 AND currency = :currency AND merchant = :merchant)) AND ABS(timestamp - :timestamp) <= :toleranceMs LIMIT 1")
+    @Query("SELECT * FROM transactions WHERE (rawNotification = :rawNotification OR (ABS(amount - :amount) < 0.001 AND currency = :currency AND LOWER(merchant) = LOWER(:merchant))) AND ABS(timestamp - :timestamp) <= :toleranceMs LIMIT 1")
     suspend fun findMatchingTransaction(
         rawNotification: String,
         amount: Double,

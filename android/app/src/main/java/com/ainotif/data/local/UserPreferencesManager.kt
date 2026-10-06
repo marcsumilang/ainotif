@@ -14,10 +14,20 @@ class UserPreferencesManager(context: Context) {
     private val _baseCurrency = MutableStateFlow(prefs.getString(KEY_BASE_CURRENCY, "USD") ?: "USD")
     val baseCurrency: StateFlow<String> = _baseCurrency.asStateFlow()
 
-    private val _monthlyBudget = MutableStateFlow(prefs.getFloat(KEY_MONTHLY_BUDGET, 2000.0f).toDouble())
+    private fun readDouble(key: String, fallback: Double): Double {
+        // Prefer exact String storage; fall back to legacy Float for upgrades.
+        prefs.getString(key + "_str", null)?.toDoubleOrNull()?.let { return it }
+        return try {
+            prefs.getFloat(key, fallback.toFloat()).toDouble()
+        } catch (_: Exception) {
+            fallback
+        }
+    }
+
+    private val _monthlyBudget = MutableStateFlow(readDouble(KEY_MONTHLY_BUDGET, 2000.0))
     val monthlyBudget: StateFlow<Double> = _monthlyBudget.asStateFlow()
 
-    private val _anomalyThreshold = MutableStateFlow(prefs.getFloat(KEY_ANOMALY_THRESHOLD, 300.0f).toDouble())
+    private val _anomalyThreshold = MutableStateFlow(readDouble(KEY_ANOMALY_THRESHOLD, 300.0))
     val anomalyThreshold: StateFlow<Double> = _anomalyThreshold.asStateFlow()
 
     private val _isBiometricEnabled = MutableStateFlow(prefs.getBoolean(KEY_BIOMETRIC_ENABLED, false))
@@ -65,12 +75,12 @@ class UserPreferencesManager(context: Context) {
     }
 
     fun setMonthlyBudget(budget: Double) {
-        prefs.edit().putFloat(KEY_MONTHLY_BUDGET, budget.toFloat()).apply()
+        prefs.edit().putString(KEY_MONTHLY_BUDGET + "_str", budget.toString()).apply()
         _monthlyBudget.value = budget
     }
 
     fun setAnomalyThreshold(threshold: Double) {
-        prefs.edit().putFloat(KEY_ANOMALY_THRESHOLD, threshold.toFloat()).apply()
+        prefs.edit().putString(KEY_ANOMALY_THRESHOLD + "_str", threshold.toString()).apply()
         _anomalyThreshold.value = threshold
     }
 
