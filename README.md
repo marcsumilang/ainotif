@@ -150,9 +150,12 @@ pnpm dev
 
 ### 3. Android App Setup
 
+Before building the native app, enable **Native API** in Clerk and register the Android package `com.ainotif` under Native applications. Provide Clerk's publishable key to Gradle as `CLERK_PUBLISHABLE_KEY` (environment variable or Gradle property). The web mobile-pairing page issues a two-minute, single-use sign-in ticket; the native Clerk SDK redeems it and refreshes the Android session tokens. The web app and backend must have their server-side `CLERK_SECRET_KEY` configured.
+
 ```bash
 cd android
 
+# Build commands need CLERK_PUBLISHABLE_KEY configured in the environment or Gradle properties.
 # Run unit tests (verifies OTP dropping, financial regex matching)
 ./gradlew testDebugUnitTest
 
@@ -227,5 +230,4 @@ When filling out the Google Play Console Data Safety questionnaire, use these de
 - **Terms of Service**: `/terms`
 - **Help & Support Desk**: `/support`
 - **Security & Data Safety Whitepaper**: `/security`
-
 

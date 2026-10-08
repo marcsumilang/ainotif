@@ -114,7 +114,7 @@ class TransactionRepository(
 
                 // Offline-only or signed-out (incl. demo) sessions never send mock
                 // bearers; they run the on-device heuristic engine.
-                val token = if (authManager.isSignedIn()) authManager.getAuthToken() else null
+                val token = authManager.getAuthToken()
                 if (preferencesManager.isOfflineOnly.value || token == null) {
                     return processLocally(title, text, packageName, timestamp)
                 }
@@ -130,11 +130,24 @@ class TransactionRepository(
                 val result = apiClient.processNotification(request, token)
                 result.fold(
                     onSuccess = { response ->
-                        handleSuccessfulAnalysis(response.analysis, response.savedRecordId, title, text, packageName, timestamp, isSynced = true)
+                        val outcome = handleSuccessfulAnalysis(
+                            response.analysis, response.savedRecordId, title, text, packageName, timestamp, isSynced = true
+                        )
+                        if (response.analysis.diagnostics.engine != "jev" && outcome !is ProcessNotificationOutcome.InterceptedScam) {
+                            ProcessNotificationOutcome.Error(
+                                "Cloud AI is unavailable (${response.analysis.diagnostics.error ?: response.analysis.diagnostics.engine}); kept for on-device review."
+                            )
+                        } else {
+                            outcome
+                        }
                     },
                     onFailure = { err ->
-                        // Fallback: If network is offline, perform local rule-based fallback into Room immediately
-                        processLocally(title, text, packageName, timestamp)
+                        // Preserve conservative local review while exposing the failed cloud classification.
+                        val fallback = processLocally(title, text, packageName, timestamp)
+                        if (fallback is ProcessNotificationOutcome.InterceptedScam) fallback
+                        else ProcessNotificationOutcome.Error(
+                            "Cloud notification classification failed: ${err.message ?: "unknown network error"}; kept for on-device review."
+                        )
                     }
                 )
             }
@@ -182,9 +195,13 @@ class TransactionRepository(
                     )
                 )
 
-                val token = if (authManager.isSignedIn()) authManager.getAuthToken() else null
-                if (forceLocal || preferencesManager.isOfflineOnly.value || token == null) {
+                val token = authManager.getAuthToken()
+                if (forceLocal) {
                     processLocally(title, text, packageName, timestamp)
+                } else if (preferencesManager.isOfflineOnly.value) {
+                    ProcessNotificationOutcome.Error("Offline-Only mode is enabled. Turn it off to classify SMS with cloud AI.")
+                } else if (token == null) {
+                    ProcessNotificationOutcome.Error("Sign in to classify SMS with cloud AI.")
                 } else {
                     val request = ProcessNotificationRequest(
                         text = text.orEmpty(),
@@ -197,10 +214,22 @@ class TransactionRepository(
                     val result = apiClient.processNotification(request, token)
                     result.fold(
                         onSuccess = { response ->
-                            handleSuccessfulAnalysis(response.analysis, response.savedRecordId, title, text, packageName, timestamp, isSynced = true)
+                            val outcome = handleSuccessfulAnalysis(
+                                response.analysis, response.savedRecordId, title, text, packageName, timestamp, isSynced = true
+                            )
+                            val diagnostics = response.analysis.diagnostics
+                            if (diagnostics.engine != "jev" && outcome !is ProcessNotificationOutcome.InterceptedScam) {
+                                ProcessNotificationOutcome.Error(
+                                    "Cloud AI is unavailable (${diagnostics.error ?: diagnostics.engine}); no transaction was imported. Try again later."
+                                )
+                            } else {
+                                outcome
+                            }
                         },
-                        onFailure = {
-                            processLocally(title, text, packageName, timestamp)
+                        onFailure = { error ->
+                            ProcessNotificationOutcome.Error(
+                                "Cloud SMS classification failed: ${error.message ?: "unknown network error"}"
+                            )
                         }
                     )
                 }
@@ -312,12 +341,17 @@ class TransactionRepository(
         }
     }
 
-    suspend fun deleteTransaction(id: String): Result<Unit> = runCatching {
-        db.transactionDao().deleteById(id)
+    suspend fun deleteTransaction(id: String): Result<Boolean> = runCatching {
         val token = authManager.getAuthToken()
-        if (!preferencesManager.isOfflineOnly.value && token != null) {
-            apiClient.deleteTransaction(id, token)
+        val deletedFromCloud = if (!preferencesManager.isOfflineOnly.value && token != null) {
+            val deleted = apiClient.deleteTransaction(id, token).getOrThrow()
+            if (!deleted) throw IllegalStateException("Cloud did not confirm the transaction deletion")
+            true
+        } else {
+            false
         }
+        db.transactionDao().deleteById(id)
+        deletedFromCloud
     }
 
     suspend fun clearAllData(): Result<Unit> = runCatching {
@@ -346,14 +380,15 @@ class TransactionRepository(
                     timestamp = tx.timestamp
                 ),
                 token
-            ).getOrThrow()
+            ).getOrElse { throw IllegalStateException("Transaction upload failed: ${it.message ?: "unknown error"}", it) }
             if (created) {
                 db.transactionDao().markSynced(tx.id)
             }
         }
 
         // 2. Fetch remote transactions and reconcile with local transactions
-        val remoteTxs = apiClient.fetchTransactions(token).getOrThrow()
+        val remoteTxs = apiClient.fetchTransactions(token)
+            .getOrElse { throw IllegalStateException("Transaction download failed: ${it.message ?: "unknown error"}", it) }
         val entities = mutableListOf<TransactionEntity>()
         for (dto in remoteTxs) {
             val parsedTime = parseTimestampOrNull(dto.timestamp) ?: continue
@@ -389,7 +424,8 @@ class TransactionRepository(
         db.transactionDao().insertAll(entities)
 
         // 3. Fetch remote alerts (never overwrite a local dismissal)
-        val remoteAlerts = apiClient.fetchAlerts(token).getOrThrow()
+        val remoteAlerts = apiClient.fetchAlerts(token)
+            .getOrElse { throw IllegalStateException("Alert download failed: ${it.message ?: "unknown error"}", it) }
         val localAlertsById = db.alertDao().getAllAlerts().associateBy { it.id }
         val alertEntities = remoteAlerts.mapNotNull { dto ->
             val parsedTime = parseTimestampOrNull(dto.timestamp) ?: return@mapNotNull null

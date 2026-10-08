@@ -162,26 +162,58 @@ export default function Dashboard() {
   // Mobile pairing modal state
   const [showLinkModal, setShowLinkModal] = useState<boolean>(false);
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
+  const [pairingTicket, setPairingTicket] = useState<string | null>(null);
+  const [pairingError, setPairingError] = useState<string | null>(null);
+  const [pairingRequestVersion, setPairingRequestVersion] = useState(0);
 
   useEffect(() => {
-    if (showLinkModal) {
-      // Never encode a mock token. Pairing requires a signed-in Clerk session;
-      // the QR embeds the short-lived session JWT and should be treated like a
-      // password (single use, do not screenshot or share).
-      if (!authToken) {
-        setQrCodeUrl(null);
-        return;
-      }
-      const callbackLink = `notifai://oauth/callback?token=${encodeURIComponent(authToken)}&userId=${encodeURIComponent(userId)}&email=${encodeURIComponent(userEmail)}`;
-      QRCode.toDataURL(callbackLink, {
-        width: 280,
-        margin: 1.5,
-        color: { dark: "#163300", light: "#ffffff" },
-      })
-        .then((url) => setQrCodeUrl(url))
-        .catch((err) => console.error("QR Code generation error:", err));
+    let cancelled = false;
+    if (!showLinkModal) {
+      setPairingTicket(null);
+      setQrCodeUrl(null);
+      setPairingError(null);
+      return;
     }
-  }, [showLinkModal, authToken, userId, userEmail]);
+    if (!isSignedIn) {
+      setPairingTicket(null);
+      setQrCodeUrl(null);
+      return;
+    }
+
+    setPairingTicket(null);
+    setQrCodeUrl(null);
+    setPairingError(null);
+    void (async () => {
+      try {
+        const response = await fetch("/api/mobile/pair", {
+          method: "POST",
+          cache: "no-store",
+          credentials: "same-origin",
+        });
+        const payload = await response.json();
+        if (!response.ok || typeof payload.ticket !== "string") {
+          throw new Error(payload.error || "Could not create a secure pairing link.");
+        }
+
+        const callbackLink = `notifai://oauth/callback?ticket=${encodeURIComponent(payload.ticket)}&userId=${encodeURIComponent(userId)}&email=${encodeURIComponent(userEmail)}`;
+        const qr = await QRCode.toDataURL(callbackLink, {
+          width: 280,
+          margin: 1.5,
+          color: { dark: "#163300", light: "#ffffff" },
+        });
+        if (!cancelled) {
+          setPairingTicket(payload.ticket);
+          setQrCodeUrl(qr);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setPairingError(error instanceof Error ? error.message : "Could not create a secure pairing link.");
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [showLinkModal, isSignedIn, userId, userEmail, pairingRequestVersion]);
 
   const [baseCurrency, setBaseCurrency] = useState<string>("USD");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -624,6 +656,7 @@ export default function Dashboard() {
           packageName: simPackage,
           userId,
           timestamp: Date.now(),
+          previewOnly: true,
         }),
       });
       const data = await res.json();
@@ -1920,7 +1953,7 @@ export default function Dashboard() {
                   Interactive Notification Simulator
                 </h3>
                 <p className="text-xs text-[#868685] mb-4">
-                  Select a live financial or phishing scenario, or craft custom payload to test AI extraction and local regex OTP drops.
+                  Preview AI classification for sample or custom messages. Previews do not add transactions, alerts, or raw analysis records to your account; each non-OTP cloud analysis still counts toward your monthly quota.
                 </p>
 
                 {/* AI Quota Meter */}
@@ -2029,7 +2062,7 @@ export default function Dashboard() {
                     ) : (
                       <Play className="w-4 h-4 fill-[#163300]" />
                     )}
-                    <span>{simLoading ? "Evaluating AI Guardian..." : "Process Notification Event"}</span>
+                    <span>{simLoading ? "Evaluating AI Guardian..." : "Preview Notification Event"}</span>
                   </button>
                 </div>
               </div>
@@ -2258,20 +2291,30 @@ export default function Dashboard() {
             </div>
 
             <div className="bg-[#f7f9f6] border border-[#e8ebe6] rounded-2xl p-4 flex flex-col items-center mb-5">
-              {!authToken ? (
+              {!isSignedIn ? (
                 <p className="text-xs text-[#454745] text-center py-8">
                   Sign in to generate a pairing code for your Android app.
                 </p>
               ) : qrCodeUrl ? (
                 <img src={qrCodeUrl} alt="Pairing QR Code" className="w-56 h-56 rounded-xl shadow-sm border border-white" />
+              ) : pairingError ? (
+                <p className="w-56 min-h-56 flex items-center justify-center text-xs text-red-700 text-center" role="alert">{pairingError}</p>
               ) : (
                 <div className="w-56 h-56 flex items-center justify-center text-xs text-[#868685]">
                   Generating QR code...
                 </div>
               )}
               <p className="text-[11px] font-semibold text-[#868685] mt-3 text-center">
-                Single-use pairing link. Treat like a password: do not screenshot or share.
+                One-time pairing link expires in 2 minutes. Treat it like a password; do not share it.
               </p>
+              {isSignedIn && (
+                <button
+                  onClick={() => setPairingRequestVersion((version) => version + 1)}
+                  className="mt-2 text-xs font-bold text-[#163300] hover:underline"
+                >
+                  Generate a fresh pairing link
+                </button>
+              )}
             </div>
 
             <div className="space-y-3">
@@ -2290,24 +2333,26 @@ export default function Dashboard() {
               </div>
 
               <div className="flex flex-col sm:flex-row gap-2">
-                {authToken ? (
+                {pairingTicket ? (
                   <a
-                    href={`notifai://oauth/callback?token=${encodeURIComponent(authToken)}&userId=${encodeURIComponent(userId)}&email=${encodeURIComponent(userEmail)}`}
+                    href={`notifai://oauth/callback?ticket=${encodeURIComponent(pairingTicket)}&userId=${encodeURIComponent(userId)}&email=${encodeURIComponent(userEmail)}`}
                     className="flex-1 bg-[#163300] text-[#9fe870] font-bold py-2.5 px-4 rounded-xl text-center text-xs hover:bg-[#204505] transition-colors flex items-center justify-center gap-2"
                   >
                     <Smartphone className="w-4 h-4" />
                     <span>Launch NotifAi App</span>
                   </a>
                 ) : (
-                  <p className="flex-1 text-center text-xs text-[#868685] py-2.5">Sign in to enable app launch.</p>
+                  <p className="flex-1 text-center text-xs text-[#868685] py-2.5">
+                    {isSignedIn ? "Generate a pairing link to enable app launch." : "Sign in to enable app launch."}
+                  </p>
                 )}
                 <button
                   onClick={() => {
-                    if (!authToken) return;
-                    const url = `notifai://oauth/callback?token=${encodeURIComponent(authToken)}&userId=${encodeURIComponent(userId)}&email=${encodeURIComponent(userEmail)}`;
+                    if (!pairingTicket) return;
+                    const url = `notifai://oauth/callback?ticket=${encodeURIComponent(pairingTicket)}&userId=${encodeURIComponent(userId)}&email=${encodeURIComponent(userEmail)}`;
                     copyText(url, "modal-link");
                   }}
-                  disabled={!authToken}
+                  disabled={!pairingTicket}
                   className="bg-[#e8ebe6] text-[#163300] font-bold py-2.5 px-4 rounded-xl text-xs hover:bg-[#d8dbd5] transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   {copiedId === "modal-link" ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}

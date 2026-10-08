@@ -51,8 +51,8 @@ object HeuristicClassifier {
                 diagnostics = AiDiagnostics("heuristic")
             )
         }
-        val financial = Regex("""\b(?:paid|spent|sent|charged|debit|received|refunded|credited|debited|transferred|withdrawn|payment|purchase|deposit|nagbayad|nakareceive)\b""", RegexOption.IGNORE_CASE).containsMatchIn(fullText)
-        val amount = Regex("""(?:USD|EUR|GBP|PHP|JPY|INR|CAD|AUD|SGD|NZD|CHF|HKD|[$€£₱₹¥])\s*\d|\d\s*(?:USD|EUR|GBP|PHP|JPY|INR|CAD|AUD|SGD|NZD|CHF|HKD)""", RegexOption.IGNORE_CASE).containsMatchIn(fullText)
+        val financial = Regex("""\b(?:paid|spent|sent|charged|debit|received|refunded|credited|debited|transferred|withdrawn|payment|purchase|deposit|nagbayad|naibayad|nakareceive|nakatanggap|na-receive|nagpadala|naipadala|nag-transfer|na-transfer|na-debit|na-credit|nabawas)\b""", RegexOption.IGNORE_CASE).containsMatchIn(fullText)
+        val amount = Regex("""(?:USD|EUR|GBP|PHP|JPY|INR|CAD|AUD|SGD|NZD|CHF|HKD|[$€£₱₹¥]|(?<![A-Za-z])P(?=\s*\d))\s*\d|\d\s*(?:USD|EUR|GBP|PHP|JPY|INR|CAD|AUD|SGD|NZD|CHF|HKD)""", RegexOption.IGNORE_CASE).containsMatchIn(fullText)
         val review = warn || (financial && amount) || (lure && urls.isNotEmpty())
         return AiAnalysisResult(
             classification = if (warn) "SCAM_PHISHING" else if (review) "REVIEW" else "IRRELEVANT",

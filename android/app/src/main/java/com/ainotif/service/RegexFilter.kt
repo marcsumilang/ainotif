@@ -43,7 +43,7 @@ object RegexFilter {
 
   // Financial currency patterns
   private val CURRENCY_PATTERN = Regex(
-    """(\$|€|£|¥|₱|₹|USD|EUR|GBP|PHP|INR|CAD|AUD|SGD)\s*[\d,]+\.?\d*|[\d,]+\.?\d*\s*(\$|€|£|¥|₱|₹|USD|EUR|GBP|PHP|INR|CAD|AUD|SGD)""",
+    """(?:\$|€|£|¥|₱|₹|USD|EUR|GBP|PHP|JPY|INR|CAD|AUD|SGD|NZD|CHF|HKD|(?<![A-Za-z])P(?=\s*[\d,]))\s*[\d,]+\.?\d*|[\d,]+\.?\d*\s*(?:\$|€|£|¥|₱|₹|USD|EUR|GBP|PHP|JPY|INR|CAD|AUD|SGD|NZD|CHF|HKD)""",
     RegexOption.IGNORE_CASE
   )
 
@@ -53,8 +53,20 @@ object RegexFilter {
     "transferred", "transfer to", "sent to", "received from", "received",
     "credited", "refunded", "withdrawn", "withdrawal", "deposit",
     "payment of", "bill payment", "authorized", "card ending",
-    "account suspended", "account locked", "security alert", "unauthorized access",
-    "action required", "verify your identity", "card deactivated", "compromised"
+    "cash in", "cash-in", "cash out", "cash-out", "account suspended", "account locked",
+    "security alert", "unauthorized access", "action required", "verify your identity",
+    "card deactivated", "compromised",
+    // Common Philippine English/Taglish transaction wording used by SMS senders.
+    "nakatanggap", "nakareceive", "na-receive", "na received", "nagbayad", "naibayad",
+    "nagpadala", "naipadala", "nag-transfer", "na-transfer", "na-debit", "na-credit",
+    "pumasok sa account", "nabawas", "cash in successful", "successful ang payment"
+  )
+
+  // SMS sender IDs often carry the financial context when the body is short or localized.
+  private val FINANCIAL_SENDER_HINTS = listOf(
+    "gcash", "maya", "paymaya", "bdo", "bpi", "metrobank", "unionbank", "securitybank",
+    "security bank", "landbank", "pnb", "rcbc", "chinabank", "eastwest", "tonik", "gotyme",
+    "cimb", "seabank", "uno bank", "pldt", "meralco", "manilawater", "maynilad"
   )
 
   // Known banking & payment package prefixes
@@ -103,6 +115,10 @@ object RegexFilter {
 
     if (packageName != null && BANKING_PACKAGES.contains(packageName)) {
       detectedSignals.add("Banking app package: $packageName")
+    }
+
+    if (title != null && FINANCIAL_SENDER_HINTS.any { title.contains(it, ignoreCase = true) }) {
+      detectedSignals.add("Financial SMS sender label")
     }
 
     return if (detectedSignals.isNotEmpty()) {

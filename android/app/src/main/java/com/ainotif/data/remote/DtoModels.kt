@@ -25,7 +25,10 @@ data class AiActionDecision(
 )
 
 @Serializable
-data class AiDiagnostics(val engine: String = "legacy")
+data class AiDiagnostics(
+    val engine: String = "legacy",
+    val error: String? = null
+)
 
 @Serializable
 data class TransactionData(

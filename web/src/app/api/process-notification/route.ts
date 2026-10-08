@@ -13,6 +13,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+    const previewOnly = typeof body?.previewOnly === "boolean" && body.previewOnly;
     const parseResult = ProcessNotificationSchema.safeParse(body);
     if (!parseResult.success) {
       return NextResponse.json({ error: "Validation error", issues: parseResult.error.issues }, { status: 400 });
@@ -48,6 +49,20 @@ export async function POST(req: NextRequest) {
     }
 
     const analysis = await classifyNotification(parseResult.data);
+
+    // Simulations use the real classifier but must not create account ledger,
+    // alert, or raw-analysis records. Keep the quota increment for provider use.
+    if (previewOnly) {
+      await incrementNotificationCount(finalUserId);
+      return NextResponse.json({
+        success: true,
+        previewOnly: true,
+        savedRecordId: null,
+        analysisRecordId: null,
+        analysis,
+      });
+    }
+
     const analysisRecordId = await saveNotificationAnalysis(finalUserId, parseResult.data, analysis);
 
     // Increment notification usage counter

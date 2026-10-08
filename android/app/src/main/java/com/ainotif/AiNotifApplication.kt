@@ -5,6 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
+import android.util.Log
+import com.ainotif.BuildConfig
 import com.ainotif.auth.ClerkAuthManager
 import com.ainotif.data.local.AppDatabase
 import com.ainotif.data.local.CategoryRulesManager
@@ -12,6 +14,7 @@ import com.ainotif.data.local.UserPreferencesManager
 import com.ainotif.data.remote.AiNotifApiClient
 import com.ainotif.data.repository.TransactionRepository
 import com.ainotif.service.AppFilterManager
+import com.clerk.api.Clerk
 
 class AiNotifApplication : Application() {
 
@@ -39,6 +42,12 @@ class AiNotifApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+
+        if (BuildConfig.CLERK_PUBLISHABLE_KEY.isNotBlank()) {
+            Clerk.initialize(this, publishableKey = BuildConfig.CLERK_PUBLISHABLE_KEY)
+        } else {
+            Log.e("AiNotifApplication", "CLERK_PUBLISHABLE_KEY is not configured; cloud sign-in is unavailable.")
+        }
 
         database = AppDatabase.getDatabase(this)
         preferencesManager = UserPreferencesManager(this)

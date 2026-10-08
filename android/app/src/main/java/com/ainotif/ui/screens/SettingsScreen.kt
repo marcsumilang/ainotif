@@ -35,10 +35,10 @@ import com.ainotif.data.importer.SmsInboxImporter
 import com.ainotif.data.importer.SmsImportSummary
 import com.ainotif.data.importer.SmsProgress
 import com.ainotif.data.remote.AiNotifApiClient
-import com.ainotif.data.repository.ProcessNotificationOutcome
 import com.ainotif.data.repository.TransactionRepository
 import com.ainotif.service.AiNotificationListenerService
 import com.ainotif.service.AppFilterManager
+import com.ainotif.service.HeuristicClassifier
 import com.ainotif.util.CurrencyConverter
 import com.ainotif.util.DataExporter
 import kotlinx.coroutines.launch
@@ -90,6 +90,14 @@ fun SettingsScreen(
     var smsImportSummary by remember { mutableStateOf<SmsImportSummary?>(null) }
     var selectedTimeRangeDays by remember { mutableStateOf<Int?>(null) } // null = All Time
     var useLocalClassifier by remember { mutableStateOf(true) }
+
+    LaunchedEffect(showSmsImportConfigDialog, authState, isOfflineOnly) {
+        if (showSmsImportConfigDialog) {
+            // Prefer the mode that can actually import ledger entries when the
+            // account is connected. Local mode is explicitly review-only.
+            useLocalClassifier = authState !is ClerkAuthManager.UserState.SignedIn || isOfflineOnly
+        }
+    }
 
     val smsPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -847,7 +855,7 @@ fun SettingsScreen(
                                     coroutineScope.launch {
                                         val result = repository.syncWithBackend()
                                         val msg = if (result.isSuccess) {
-                                            "Sync complete"
+                                            "Cloud sync complete"
                                         } else {
                                             val reason = result.exceptionOrNull()?.message
                                             if (reason != null) "Sync failed: $reason" else "Sync failed. Sign in to sync cloud data."
@@ -866,6 +874,12 @@ fun SettingsScreen(
                                 Text("Sync Now", fontWeight = FontWeight.Bold)
                             }
                         }
+
+                        Text(
+                            "Sync pulls records still stored in your cloud account onto this device. Wiping local data does not delete cloud records.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
 
                         HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
@@ -939,6 +953,7 @@ fun SettingsScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         val isSignedIn = authState is ClerkAuthManager.UserState.SignedIn
+                        val lastPairError by authManager.lastPairError.collectAsState()
                         val userEmail = when (val state = authState) {
                             is ClerkAuthManager.UserState.SignedIn -> state.email.ifBlank { state.userId }
                             is ClerkAuthManager.UserState.DemoUser -> state.userId
@@ -992,6 +1007,22 @@ fun SettingsScreen(
 
                         Spacer(modifier = Modifier.height(14.dp))
 
+                        if (!lastPairError.isNullOrBlank() && !isSignedIn) {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.errorContainer
+                            ) {
+                                Text(
+                                    text = "Last pairing failed: $lastPairError",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.padding(10.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                        }
+
                         if (isSignedIn) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1032,9 +1063,14 @@ fun SettingsScreen(
                             }
                         } else {
                             Text(
-                                text = "Sign in with Clerk to automatically sync banking notifications and fraud alerts between your phone and the Web Command Center.",
+                                text = if (BuildConfig.CLERK_PUBLISHABLE_KEY.isBlank()) {
+                                    "Cloud sign-in is not configured in this app build. Build with CLERK_PUBLISHABLE_KEY after enabling Clerk Native API."
+                                } else {
+                                    "Sign in with Clerk to automatically sync banking notifications and fraud alerts between your phone and the Web Command Center."
+                                },
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                color = if (BuildConfig.CLERK_PUBLISHABLE_KEY.isBlank()) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                                 modifier = Modifier.padding(bottom = 12.dp)
                             )
 
@@ -1046,6 +1082,7 @@ fun SettingsScreen(
                                     onClick = {
                                         authManager.launchClerkSignIn(context, webAuthUrlInput, mode = "signin")
                                     },
+                                    enabled = BuildConfig.CLERK_PUBLISHABLE_KEY.isNotBlank(),
                                     modifier = Modifier.weight(1.1f),
                                     shape = RoundedCornerShape(10.dp),
                                     colors = ButtonDefaults.buttonColors(
@@ -1062,6 +1099,7 @@ fun SettingsScreen(
                                     onClick = {
                                         authManager.launchClerkSignUp(context, webAuthUrlInput)
                                     },
+                                    enabled = BuildConfig.CLERK_PUBLISHABLE_KEY.isNotBlank(),
                                     modifier = Modifier.weight(1.1f),
                                     shape = RoundedCornerShape(10.dp)
                                 ) {
@@ -1072,6 +1110,7 @@ fun SettingsScreen(
 
                                 OutlinedButton(
                                     onClick = { showManualTokenDialog = true },
+                                    enabled = BuildConfig.CLERK_PUBLISHABLE_KEY.isNotBlank(),
                                     shape = RoundedCornerShape(10.dp),
                                     contentPadding = PaddingValues(horizontal = 10.dp)
                                 ) {
@@ -1283,7 +1322,7 @@ fun SettingsScreen(
                     }
                 }
 
-                // Live Notification Simulator
+                // Local-only notification preview
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -1291,8 +1330,8 @@ fun SettingsScreen(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text("Live Notification Simulator", fontWeight = FontWeight.Bold)
-                            Text("Inject sample notifications for local & cloud testing.", style = MaterialTheme.typography.bodySmall)
+                            Text("Local Notification Preview", fontWeight = FontWeight.Bold)
+                            Text("Try sample messages. Previews stay on this device and are never saved to your account.", style = MaterialTheme.typography.bodySmall)
 
                             Spacer(modifier = Modifier.height(10.dp))
 
@@ -1352,21 +1391,12 @@ fun SettingsScreen(
                                 onClick = {
                                     coroutineScope.launch {
                                         isSimulating = true
-                                        val outcome = repository.processIncomingNotification(
-                                            title = simTitle,
-                                            text = simText,
-                                            packageName = simPackage
-                                        )
-                                        simOutcomeMessage = when (outcome) {
-                                            is ProcessNotificationOutcome.ParsedTransaction ->
-                                                "Parsed Transaction: ${outcome.transaction.amount} ${outcome.transaction.currency} (${outcome.transaction.category})"
-                                            is ProcessNotificationOutcome.InterceptedScam ->
-                                                "Intercepted Phishing: ${outcome.alert.reason} (${outcome.alert.riskScore}%)"
-                                            is ProcessNotificationOutcome.DroppedSecurityCode ->
-                                                "Dropped Sensitive OTP on-device"
-                                            is ProcessNotificationOutcome.Ignored -> "Bypassed / Ignored"
-                                            is ProcessNotificationOutcome.ReviewRequired -> "Review needed: ${outcome.reason}"
-                                            is ProcessNotificationOutcome.Error -> "❌ Error: ${outcome.message}"
+                                        val preview = HeuristicClassifier.classify(simTitle, simText, simPackage)
+                                        simOutcomeMessage = when {
+                                            preview.classification == "IGNORED_OTP" -> "Preview: sensitive OTP would be dropped on-device. Nothing was saved."
+                                            preview.decision.warn -> "Preview phishing warning: ${preview.scamReason ?: "Suspicious pattern"} (${preview.riskScore}%). Nothing was saved."
+                                            preview.decision.requiresReview -> "Preview needs review: ${preview.explanation} Nothing was saved."
+                                            else -> "Preview ignored: no transaction or phishing signal matched. Nothing was saved."
                                         }
                                         isSimulating = false
                                     }
@@ -1377,7 +1407,7 @@ fun SettingsScreen(
                                 if (isSimulating) {
                                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                                 } else {
-                                    Text("Simulate Interception")
+                                    Text("Preview Classification")
                                 }
                             }
 
@@ -1465,14 +1495,18 @@ fun SettingsScreen(
             onDismissRequest = { showWipeDataDialog = false },
             icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
             title = { Text("Wipe All Local Data?") },
-            text = { Text("This will permanently delete all stored transactions, intercepted scam alerts, and notification logs from this device.") },
+            text = { Text("This permanently deletes transactions, scam alerts, and notification logs from this device only. Records still in your cloud account will return the next time you sync. Delete a cloud record while signed in to remove it from both places.") },
             confirmButton = {
                 Button(
                     onClick = {
                         coroutineScope.launch {
-                            repository.clearAllData()
+                            val result = repository.clearAllData()
                             showWipeDataDialog = false
-                            Toast.makeText(context, "All local data wiped", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                context,
+                                if (result.isSuccess) "All local data wiped" else "Could not wipe local data: ${result.exceptionOrNull()?.message}",
+                                Toast.LENGTH_LONG
+                            ).show()
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
@@ -1578,9 +1612,13 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Fast On-Device Engine", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text("Fast On-Device Review", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                             Text(
-                                "Instant offline analysis without using cloud API tokens.",
+                                if (useLocalClassifier) {
+                                    "Keeps SMS on-device. Likely financial messages are logged for review; transactions are not auto-imported. Turn this off for cloud AI classification."
+                                } else {
+                                    "Eligible messages are sent to NotifAi for cloud classification. Sign in, enable network access, and turn off Offline-Only mode. OTPs are dropped on-device first."
+                                },
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                             )
@@ -1597,7 +1635,7 @@ fun SettingsScreen(
                     onClick = {
                         showSmsImportConfigDialog = false
                         isImportingSms = true
-                        smsProgress = SmsProgress(0, 0, 0, 0, 0, 0)
+                        smsProgress = SmsProgress()
                         coroutineScope.launch {
                             val result = SmsInboxImporter.importHistoricalSms(
                                 context = context,
@@ -1617,10 +1655,10 @@ fun SettingsScreen(
                                     Toast.makeText(context, "Import failed: ${err.message}", Toast.LENGTH_LONG).show()
                                 }
                             )
-                        }
-                    }
-                ) {
-                    Text("Start Scan")
+                }
+            }
+        ) {
+                    Text(if (useLocalClassifier) "Scan for Reviews Only" else "Import with Cloud AI")
                 }
             },
             dismissButton = {
@@ -1675,8 +1713,19 @@ fun SettingsScreen(
                                 Text("${prog.otpsDropped}", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
                             }
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Needs Review:", fontSize = 12.sp)
+                                Text("${prog.reviewRequired}", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("Duplicates Skipped:", fontSize = 12.sp)
                                 Text("${prog.duplicates}", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Processing Errors:", fontSize = 12.sp)
+                                Text("${prog.processingErrors}", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                            prog.processingErrorMessage?.let { message ->
+                                Text(message, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                             }
                         }
                     }
@@ -1690,8 +1739,20 @@ fun SettingsScreen(
     smsImportSummary?.let { summary ->
         AlertDialog(
             onDismissRequest = { smsImportSummary = null },
-            icon = { Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(36.dp)) },
-            title = { Text("SMS Import Complete", textAlign = androidx.compose.ui.text.style.TextAlign.Center) },
+            icon = {
+                Icon(
+                    if (summary.processingErrors > 0) Icons.Default.Warning else Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = if (summary.processingErrors > 0) MaterialTheme.colorScheme.error else Color(0xFF10B981),
+                    modifier = Modifier.size(36.dp)
+                )
+            },
+            title = {
+                Text(
+                    if (summary.processingErrors > 0) "SMS Scan Finished with Errors" else "SMS Import Complete",
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            },
             text = {
                 Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
@@ -1722,10 +1783,32 @@ fun SettingsScreen(
                                 Text("${summary.duplicatesSkipped}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             }
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Non-Financial Ignored:", fontSize = 13.sp)
+                                Text("Needs Review (not imported):", fontSize = 13.sp)
+                                Text("${summary.reviewRequired}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Processing Errors:", fontSize = 13.sp)
+                                Text("${summary.processingErrors}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Other Messages Skipped:", fontSize = 13.sp)
                                 Text("${summary.ignoredCount}", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                             }
                         }
+                    }
+                    if (summary.onDeviceReviewOnly && summary.transactionsImported == 0 && summary.reviewRequired > 0) {
+                        Text(
+                            "On-device review does not add transactions. Turn off Fast On-Device Review and scan again to use cloud classification.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    summary.processingErrorMessage?.let { message ->
+                        Text(
+                            message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
                     }
                 }
             },
@@ -1744,15 +1827,15 @@ fun SettingsScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        "Paste the deep link or pairing token from your Web Command Center (click 'Sync Mobile' on the web dashboard):",
+                        "Paste the one-time pairing link or ticket from your Web Command Center. The Android Clerk session will then refresh automatically.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                     )
                     OutlinedTextField(
                         value = manualInputText,
                         onValueChange = { manualInputText = it },
-                        label = { Text("Deep Link or Token") },
-                        placeholder = { Text("notifai://oauth/callback?token=... or ainotif://...") },
+                        label = { Text("Pairing Link or Ticket") },
+                        placeholder = { Text("notifai://oauth/callback?ticket=...") },
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 3
                     )
@@ -1789,47 +1872,38 @@ fun SettingsScreen(
                         if (webAuthUrlInput.isNotBlank()) {
                             prefs.setWebUrl(webAuthUrlInput)
                         }
-                        if (input.startsWith("ainotif://") || input.startsWith("notifai://")) {
-                            try {
-                                val uri = Uri.parse(input)
-                                val token = uri.getQueryParameter("token") ?: ""
-                                val userId = uri.getQueryParameter("userId") ?: ""
-                                val email = uri.getQueryParameter("email") ?: ""
-                                if (token.isNotBlank() && userId.isNotBlank()) {
-                                    authManager.setSession(userId, email, token)
-                                    coroutineScope.launch {
-                                        val result = repository.syncWithBackend()
-                                        val msg = if (result.isSuccess) {
-                                            "Connected to Clerk ($userId) & Synced!"
-                                        } else {
-                                            "Paired ($userId). Cloud sync needs network: ${result.exceptionOrNull()?.message ?: "unavailable"}"
-                                        }
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    }
-                                    showManualTokenDialog = false
-                                    return@Button
-                                } else {
-                                    Toast.makeText(context, "Link is missing token or userId", Toast.LENGTH_SHORT).show()
-                                    return@Button
-                                }
-                            } catch (_: Exception) {}
-                        }
-                        val rawToken = input.ifBlank { manualInputText.trim() }
-                        val finalUserId = manualUserIdInput.trim()
-                        val finalEmail = manualEmailInput.trim()
-                        if (rawToken.isBlank() || finalUserId.isBlank()) {
-                            Toast.makeText(context, "Token and Clerk User ID are required (no demo session created)", Toast.LENGTH_SHORT).show()
+                        if (input.isBlank()) {
+                            Toast.makeText(context, "A one-time Clerk pairing ticket is required", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
-                        authManager.setSession(finalUserId, finalEmail, rawToken)
+
+                        val parsedUri = if (input.startsWith("ainotif://") || input.startsWith("notifai://")) {
+                            runCatching { Uri.parse(input) }.getOrNull()
+                        } else null
+                        val ticket = parsedUri?.getQueryParameter("ticket") ?: input.takeIf { parsedUri == null }
+                        val legacyToken = parsedUri?.getQueryParameter("token")
+                        val finalUserId = parsedUri?.getQueryParameter("userId") ?: manualUserIdInput.trim()
+                        val finalEmail = parsedUri?.getQueryParameter("email") ?: manualEmailInput.trim()
                         coroutineScope.launch {
-                            val result = repository.syncWithBackend()
-                            val msg = if (result.isSuccess) {
-                                "Connected to Clerk ($finalUserId) & Synced!"
-                            } else {
-                                "Paired ($finalUserId). Cloud sync needs network: ${result.exceptionOrNull()?.message ?: "unavailable"}"
+                            try {
+                                if (!ticket.isNullOrBlank()) {
+                                    authManager.setSession(finalUserId, finalEmail, ticket)
+                                } else if (!legacyToken.isNullOrBlank()) {
+                                    authManager.setSessionWithToken(finalUserId, finalEmail, legacyToken)
+                                } else {
+                                    throw IllegalArgumentException("No ticket or token found in that pairing link.")
+                                }
+                                val result = repository.syncWithBackend()
+                                val displayUser = authManager.getUserId() ?: finalUserId.ifBlank { "account" }
+                                val msg = if (result.isSuccess) {
+                                    "Connected to Clerk ($displayUser) & Synced!"
+                                } else {
+                                    "Paired ($displayUser). Sync failed: ${result.exceptionOrNull()?.message ?: "unknown error"}"
+                                }
+                                Toast.makeText(context, msg.take(180), Toast.LENGTH_LONG).show()
+                            } catch (error: Exception) {
+                                Toast.makeText(context, "Pairing failed: ${error.message ?: "invalid or expired ticket"}", Toast.LENGTH_LONG).show()
                             }
-                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                         }
                         showManualTokenDialog = false
                     }

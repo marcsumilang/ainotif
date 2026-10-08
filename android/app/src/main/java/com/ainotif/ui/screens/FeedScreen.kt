@@ -153,14 +153,14 @@ fun FeedScreen(
                                 val syncResult = syncState.second
                                 val msg = when {
                                     syncResult.isSuccess && activeCount > 0 -> "Captured $activeCount active items + synced"
-                                    syncResult.isSuccess -> "Sync complete"
+                                    syncResult.isSuccess -> "Cloud sync complete"
                                     syncResult.exceptionOrNull() is AuthenticationRequiredException && activeCount > 0 ->
                                         "Captured $activeCount items locally. Sign in to sync cloud data"
                                     syncResult.exceptionOrNull() is AuthenticationRequiredException ->
                                         "Sign in to sync cloud data"
-                                    else -> "Sync failed. Check your connection and try again"
+                                    else -> "Sync failed: ${syncResult.exceptionOrNull()?.message ?: "Unknown error"}"
                                 }
-                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, msg.take(140), Toast.LENGTH_LONG).show()
                             }
                         }
                     ) {
@@ -475,15 +475,28 @@ fun FeedScreen(
             onDismissRequest = { showDeleteConfirmDialog = null },
             icon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
             title = { Text("Delete Transaction?") },
-            text = { Text("Are you sure you want to delete this ${tx.currency} ${tx.amount} record from ${tx.merchant}?") },
+            text = { Text("Delete this ${tx.currency} ${tx.amount} record from ${tx.merchant}? When signed in with cloud sync enabled, deletion is confirmed with your account before this device removes it.") },
             confirmButton = {
                 Button(
                     onClick = {
                         coroutineScope.launch {
-                            repository.deleteTransaction(tx.id)
-                            showDeleteConfirmDialog = null
-                            editingTransaction = null
-                            Toast.makeText(context, "Transaction deleted", Toast.LENGTH_SHORT).show()
+                            val result = repository.deleteTransaction(tx.id)
+                            if (result.isSuccess) {
+                                showDeleteConfirmDialog = null
+                                editingTransaction = null
+                                val message = if (result.getOrThrow()) {
+                                    "Transaction deleted from your account and device"
+                                } else {
+                                    "Transaction deleted from this device only; a cloud copy may return after sync"
+                                }
+                                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "Could not delete transaction: ${result.exceptionOrNull()?.message}",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)

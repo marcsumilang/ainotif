@@ -8,9 +8,13 @@ plugins {
     id("io.sentry.android.gradle") version "6.23.0"
 }
 
+val clerkPublishableKey = providers.gradleProperty("CLERK_PUBLISHABLE_KEY")
+    .orElse(providers.environmentVariable("CLERK_PUBLISHABLE_KEY"))
+    .getOrElse("")
+
 android {
     namespace = "com.ainotif"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.ainotif"
@@ -21,6 +25,7 @@ android {
 
         buildConfigField("String", "BACKEND_BASE_URL", "\"https://ainotif-backend.marcsumilang.workers.dev\"")
         buildConfigField("String", "WEB_BASE_URL", "\"https://ainotif-web.marcsumilang.workers.dev\"")
+        buildConfigField("String", "CLERK_PUBLISHABLE_KEY", "\"$clerkPublishableKey\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -42,13 +47,21 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
     }
 
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    packaging {
+        resources {
+            excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
+        }
     }
 }
 
@@ -61,6 +74,7 @@ dependencies {
     implementation("androidx.fragment:fragment-ktx:1.8.5")
     implementation("androidx.biometric:biometric:1.2.0-alpha05")
     implementation("androidx.core:core-splashscreen:1.0.1")
+    implementation("com.clerk:clerk-android-api:1.0")
 
     // Jetpack Compose BOM
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
@@ -80,7 +94,7 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.8.5")
 
     // Room Database
-    val roomVersion = "2.6.1"
+    val roomVersion = "2.7.2"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")

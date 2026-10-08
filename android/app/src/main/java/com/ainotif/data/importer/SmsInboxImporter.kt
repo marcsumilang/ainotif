@@ -19,7 +19,11 @@ data class SmsImportSummary(
     val alertsIntercepted: Int = 0,
     val otpsDropped: Int = 0,
     val duplicatesSkipped: Int = 0,
-    val ignoredCount: Int = 0
+    val reviewRequired: Int = 0,
+    val processingErrors: Int = 0,
+    val ignoredCount: Int = 0,
+    val onDeviceReviewOnly: Boolean = false,
+    val processingErrorMessage: String? = null
 )
 
 data class SmsProgress(
@@ -28,7 +32,10 @@ data class SmsProgress(
     val transactions: Int = 0,
     val alerts: Int = 0,
     val otpsDropped: Int = 0,
-    val duplicates: Int = 0
+    val duplicates: Int = 0,
+    val reviewRequired: Int = 0,
+    val processingErrors: Int = 0,
+    val processingErrorMessage: String? = null
 )
 
 object SmsInboxImporter {
@@ -52,7 +59,7 @@ object SmsInboxImporter {
      * @param context Application or UI context
      * @param repository TransactionRepository to persist transactions and alerts
      * @param timeRangeDays Optional filter for number of past days (e.g. 30, 90, null for All)
-     * @param forceLocal True to run high-speed on-device heuristic engine (recommended for bulk)
+     * @param forceLocal True to keep SMS on-device and flag review cases without adding transactions
      * @param onProgress Callback invoked as messages are scanned
      */
     suspend fun importHistoricalSms(
@@ -106,11 +113,14 @@ object SmsInboxImporter {
                 var alertCount = 0
                 var otpCount = 0
                 var dupCount = 0
+                var reviewCount = 0
+                var errorCount = 0
                 var ignoredCount = 0
+                var firstErrorMessage: String? = null
 
                 // Report initial progress on the main thread (Compose state).
                 withContext(Dispatchers.Main) {
-                    onProgress?.invoke(SmsProgress(0, total, 0, 0, 0, 0))
+                    onProgress?.invoke(SmsProgress(current = 0, total = total))
                 }
 
                 while (c.moveToNext()) {
@@ -150,7 +160,12 @@ object SmsInboxImporter {
                                     is ProcessNotificationOutcome.ParsedTransaction -> txCount++
                                     is ProcessNotificationOutcome.InterceptedScam -> alertCount++
                                     is ProcessNotificationOutcome.DroppedSecurityCode -> otpCount++
-                                    else -> ignoredCount++
+                                    is ProcessNotificationOutcome.ReviewRequired -> reviewCount++
+                                    is ProcessNotificationOutcome.Error -> {
+                                        errorCount++
+                                        if (firstErrorMessage == null) firstErrorMessage = outcome.message
+                                    }
+                                    ProcessNotificationOutcome.Ignored -> ignoredCount++
                                 }
                             }
                         }
@@ -164,7 +179,10 @@ object SmsInboxImporter {
                             transactions = txCount,
                             alerts = alertCount,
                             otpsDropped = otpCount,
-                            duplicates = dupCount
+                            duplicates = dupCount,
+                            reviewRequired = reviewCount,
+                            processingErrors = errorCount,
+                            processingErrorMessage = firstErrorMessage
                         )
                         withContext(Dispatchers.Main) {
                             onProgress?.invoke(snapshot)
@@ -176,7 +194,7 @@ object SmsInboxImporter {
 
                 Log.i(
                     TAG,
-                    "SMS Import completed: $total scanned, $txCount transactions, $alertCount alerts, $otpCount OTPs dropped, $dupCount duplicates skipped."
+                    "SMS Import completed: $total scanned, $txCount transactions, $alertCount alerts, $reviewCount need review, $otpCount OTPs dropped, $dupCount duplicates skipped, $errorCount errors."
                 )
 
                 SmsImportSummary(
@@ -185,7 +203,11 @@ object SmsInboxImporter {
                     alertsIntercepted = alertCount,
                     otpsDropped = otpCount,
                     duplicatesSkipped = dupCount,
-                    ignoredCount = ignoredCount
+                    reviewRequired = reviewCount,
+                    processingErrors = errorCount,
+                    ignoredCount = ignoredCount,
+                    onDeviceReviewOnly = forceLocal,
+                    processingErrorMessage = firstErrorMessage
                 )
             }
         }

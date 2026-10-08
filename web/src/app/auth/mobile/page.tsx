@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, Suspense } from "react";
+import React, { useEffect, useRef, useState, Suspense } from "react";
 import { useUser, useAuth, SignIn, SignUp } from "@clerk/nextjs";
 import { useSearchParams } from "next/navigation";
 import { Shield, CheckCircle2, ArrowRight, Smartphone, RefreshCw, UserPlus, LogIn } from "lucide-react";
@@ -11,9 +11,10 @@ function MobileAuthContent() {
   const searchParams = useSearchParams();
   const initialMode = searchParams.get("mode") === "signup" ? "signup" : "signin";
   const [authMode, setAuthMode] = useState<"signin" | "signup">(initialMode);
-  const [token, setToken] = useState<string | null>(null);
   const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
   const [isRedirecting, setIsRedirecting] = useState<boolean>(false);
+  const [pairError, setPairError] = useState<string | null>(null);
+  const pairingStarted = useRef(false);
 
   // Sync mode with query parameter if it changes
   useEffect(() => {
@@ -24,20 +25,47 @@ function MobileAuthContent() {
   }, [searchParams]);
 
   useEffect(() => {
-    async function resolveToken() {
-      if (isLoaded && isSignedIn && user) {
+    async function resolvePairingTicket() {
+      if (isLoaded && isSignedIn && user && !pairingStarted.current) {
+        pairingStarted.current = true;
         try {
           setIsRedirecting(true);
-          const sessionToken = await getToken();
-          if (!sessionToken) {
-            console.error("Clerk session token unavailable for mobile pairing.");
-            setIsRedirecting(false);
-            return;
+          // Preferred: short-lived single-use native ticket for current Android builds.
+          let ticket: string | null = null;
+          try {
+            const response = await fetch("/api/mobile/pair", {
+              method: "POST",
+              cache: "no-store",
+              credentials: "same-origin",
+            });
+            const payload = await response.json();
+            if (response.ok && typeof payload.ticket === "string") {
+              ticket = payload.ticket;
+            } else {
+              console.warn("Ticket pairing unavailable, falling back to session token:", payload.error);
+            }
+          } catch (ticketErr) {
+            console.warn("Ticket pairing request failed, falling back to session token:", ticketErr);
           }
+
+          // Fallback for older Android builds that still expect ?token=...
+          // (kept alongside ?ticket= so one web deploy pairs both app versions).
+          let sessionToken: string | null = null;
+          try {
+            sessionToken = await getToken();
+          } catch (tokenErr) {
+            console.warn("Clerk session token unavailable for legacy pairing:", tokenErr);
+          }
+
+          if (!ticket && !sessionToken) {
+            throw new Error("Could not create a secure Android pairing ticket. Try again.");
+          }
+
           const email = user.primaryEmailAddress?.emailAddress || "";
-          // Support new notifai:// scheme, while maintaining backward compatibility
-          const targetUrl = `notifai://oauth/callback?token=${encodeURIComponent(sessionToken)}&userId=${encodeURIComponent(user.id)}&email=${encodeURIComponent(email)}`;
-          setToken(sessionToken);
+          const params = new URLSearchParams({ userId: user.id, email });
+          if (ticket) params.set("ticket", ticket);
+          if (sessionToken) params.set("token", sessionToken);
+          const targetUrl = `notifai://oauth/callback?${params.toString()}`;
           setRedirectUrl(targetUrl);
 
           // Brief moment for visual confirmation, then trigger deep link
@@ -45,13 +73,13 @@ function MobileAuthContent() {
             window.location.href = targetUrl;
           }, 600);
         } catch (err) {
-          console.error("Failed to generate Clerk token for mobile deep link:", err);
+          setPairError(err instanceof Error ? err.message : "Could not prepare Android pairing.");
           setIsRedirecting(false);
         }
       }
     }
 
-    resolveToken();
+    resolvePairingTicket();
   }, [isLoaded, isSignedIn, user, getToken]);
 
   if (!isLoaded) {
@@ -91,6 +119,10 @@ function MobileAuthContent() {
               <RefreshCw className="w-3.5 h-3.5 text-[#163300] animate-spin" />
               <span>Redirecting to NotifAi App...</span>
             </div>
+          )}
+
+          {pairError && (
+            <p className="mb-4 text-sm font-semibold text-red-700" role="alert">{pairError}</p>
           )}
 
           {redirectUrl && (

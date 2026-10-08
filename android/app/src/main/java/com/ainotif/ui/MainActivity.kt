@@ -258,24 +258,50 @@ class MainActivity : FragmentActivity() {
         val uri = intent?.data ?: return
         val isAuthScheme = uri.scheme == "ainotif" || uri.scheme == "notifai"
         if (isAuthScheme && uri.host == "oauth" && uri.path?.startsWith("/callback") == true) {
+            val ticket = uri.getQueryParameter("ticket")
             val token = uri.getQueryParameter("token")
             val userId = uri.getQueryParameter("userId")
             val email = uri.getQueryParameter("email") ?: ""
 
-            if (!token.isNullOrBlank() && !userId.isNullOrBlank()) {
+            if (!userId.isNullOrBlank() && (!ticket.isNullOrBlank() || !token.isNullOrBlank())) {
                 val app = AiNotifApplication.instance
-                app.authManager.setSession(userId = userId, email = email, token = token)
-
                 lifecycleScope.launch {
-                    val result = app.repository.syncWithBackend()
-                    val displayUser = if (email.isNotBlank()) email else userId
-                    val msg = if (result.isSuccess) {
-                        "Clerk Authenticated: $displayUser • Data Synced"
-                    } else {
-                        "Clerk Authenticated: $displayUser"
+                    try {
+                        if (!ticket.isNullOrBlank()) {
+                            // Preferred: native one-time ticket (current web builds).
+                            app.authManager.setSession(userId = userId, email = email, ticket = ticket)
+                        } else {
+                            // Fallback: legacy short-lived JWT (older web builds).
+                            app.authManager.setSessionWithToken(userId = userId, email = email, token = token!!)
+                        }
+                        val result = app.repository.syncWithBackend()
+                        val displayUser = if (email.isNotBlank()) email else userId
+                        val msg = if (result.isSuccess) {
+                            "Clerk Authenticated: $displayUser • Data Synced"
+                        } else {
+                            "Clerk Authenticated: $displayUser • Sync failed: ${result.exceptionOrNull()?.message ?: "unknown error"}"
+                        }
+                        Toast.makeText(this@MainActivity, msg.take(180), Toast.LENGTH_LONG).show()
+                    } catch (error: Exception) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Clerk pairing failed: ${error.message ?: "invalid or expired pairing ticket"}",
+                            Toast.LENGTH_LONG
+                        ).show()
                     }
-                    Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
                 }
+            } else {
+                // Never fail silently: a version-skewed link previously left the
+                // user on "Signed Out" with no explanation.
+                android.util.Log.w(
+                    "MainActivity",
+                    "Ignoring oauth callback: missing ticket/token or userId (ticket=${!ticket.isNullOrBlank()}, token=${!token.isNullOrBlank()}, userId=${!userId.isNullOrBlank()})"
+                )
+                Toast.makeText(
+                    this,
+                    "Pairing link missing ticket and user. Rebuild the app and redeploy the web together, or paste the link via the QR manual-pair button.",
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
     }

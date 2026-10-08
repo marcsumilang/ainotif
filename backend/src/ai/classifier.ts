@@ -88,10 +88,11 @@ const contextOf = (text: string, start: number, end: number) => text.slice(Math.
 
 export function extractAmountCandidates(text: string): AmountCandidate[] {
   const money = String.raw`(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?`;
-  const token = `(?:${CURRENCIES.join("|")}|[$€£₱₹¥])`;
+  // Some Philippine bank SMS use the ASCII peso prefix, e.g. `P25045.54`.
+  const token = String.raw`(?:${CURRENCIES.join("|")}|[$€£₱₹¥]|(?<![A-Z])P(?=\s*\d))`;
   const sign = String.raw`(?:-\s*)?`;
   const rx = new RegExp(`(?<![\\w.,-])(${sign}${token}\\s*${sign}${money}|${sign}${money}\\s*${token})(?!\\w|[.,]\\d)`, "gi");
-  const symbols: Record<string, typeof CURRENCIES[number]> = { "$": "USD", "€": "EUR", "£": "GBP", "₱": "PHP", "₹": "INR", "¥": "JPY" };
+  const symbols: Record<string, typeof CURRENCIES[number]> = { "$": "USD", "€": "EUR", "£": "GBP", "₱": "PHP", "P": "PHP", "₹": "INR", "¥": "JPY" };
   const candidates: AmountCandidate[] = [];
   for (const match of text.matchAll(rx)) {
     const span = match[0];
@@ -154,20 +155,30 @@ export function buildJevRequest(payload: NotificationPayload, model = "jev-lates
   const text = fullTextOf(payload);
   const amounts = extractAmountCandidates(text);
   const merchants = extractMerchantCandidates(text);
+  const sender = payload.title?.trim();
+  if (sender && !merchants.some((candidate) => candidate.span.toLowerCase() === sender.toLowerCase())) {
+    merchants.push({
+      id: `merchant_${merchants.length}`,
+      span: sender,
+      start: 0,
+      end: sender.length,
+      context: `SMS sender label: ${sender}. Use only when it names the merchant or biller and the message has no clearer counterparty.`,
+    });
+  }
   const selection = (candidates: { id: string; span: string; context: string }[]) => Object.fromEntries([
     ["none", "No candidate matches, information is missing, or the message does not report a transaction."],
     ...candidates.map((c) => [c.id, `Source span: ${c.span}. Context: ${c.context}`]),
   ]);
   const questions: Record<string, Question> = {
     completed: { type: "noul", instructions: "Does `notification.text` SAY a financial transaction already happened? Judge what the message reports, not whether the sender is authentic or the event can be independently verified.", criteria: {
-      true: "Reports money paid, spent, debited, withdrawn, received, deposited, credited, transferred, or already refunded. For example: 'Paid PHP 1,250 at SM', 'You spent $42.50', 'You transferred PHP 1,000', 'Refund credited'. A balance included alongside a completed payment does not negate that payment.",
+      true: "Reports money paid, spent, debited, withdrawn, received, deposited, credited, transferred, or already refunded. This includes common Philippine English/Taglish wording such as 'Nakatanggap ka ng PHP 1,000', 'Nagbayad ka ng PHP 1,000', 'Naipadala ang PHP 1,000', and 'You received P25045.54 from Joseph'. For example: 'Paid PHP 1,250 at SM', 'You spent $42.50', 'You transferred PHP 1,000', 'Refund credited'. A balance included alongside a completed payment does not negate that payment.",
       false: "Only an offer, promotion, balance, credit limit, quoted fee, request to pay, future payment, pending authorization, declined or failed payment, chat, or security alert. A card eSOA or statement with a total/minimum due and due date, an overdue or missed-loan-payment notice asking the recipient to pay, and a low-balance notice describing conditional future service charges are reminders, not completed transactions. Amounts due, quoted fees and possible future charges are not money movements. For example: 'Get $50 cashback when you sign up', 'Available balance $500', 'Payment declined', 'Pending authorization', or 'Your statement is available; PHP 500 is due by Friday'.",
     } },
     phishing: { type: "noul", instructions: "Does `notification.text` appear to be phishing or a scam? Use `urls` as parsed hostname evidence. A routine security alert telling the user to open their bank app is not by itself phishing. The source package or a bank name in text does not verify identity. Unknown domains alone do not establish fraud. Evaluate lures, threats, deceptive links and demands together." },
     credentials: { type: "noul", instructions: "Does `notification.text` ask the recipient to disclose or enter credentials to another person or an unverified destination? A reminder not to disclose credentials is not a disclosure request." },
     status: { type: "choice", instructions: "If this message reports a transaction, what is its status? Choose unknown when no status can be established.", criteria: { COMPLETED: "Money already moved or a payment is confirmed paid.", PENDING: "Pending, scheduled, authorized only, or not settled yet.", DECLINED: "Failed or declined; money did not move.", REVERSED: "An already completed refund or credited reversal.", UNKNOWN: "No transaction or unclear status." } },
     amount: { type: "choice", instructions: "If this message reports a transaction, which `amounts` span is the amount of that money movement? Exclude balances, limits, offers and separate fees. If multiple independent transactions are described, select none; the app cannot record multiple movements from one notification.", criteria: selection(amounts) },
-    merchant: { type: "choice", instructions: "If this message reports a transaction, which `merchants` span names its merchant or counterparty? Choose none if missing or ambiguous.", criteria: selection(merchants) },
+    merchant: { type: "choice", instructions: "If this message reports a transaction, which `merchants` span names its merchant or counterparty? Choose none if missing or ambiguous. A sender label may identify a biller only when there is no clearer counterparty in the message; for person-to-person transfers, prefer the named person.", criteria: selection(merchants) },
     direction: { type: "choice", instructions: "If this message reports a transaction, which ledger type applies to the account owner receiving the notification? Interpret 'you' as that account owner. A named counterparty is not the account owner. Choose UNKNOWN if unclear.", criteria: { DEBIT: "The account owner paid a merchant, spent, or withdrew money.", CREDIT: "The account owner received money, a deposit, salary, or a completed refund.", TRANSFER: "The account owner sent or transferred money to another account or person (e.g. 'You transferred PHP 1,000 to Ana').", UNKNOWN: "No transaction or unclear direction." } },
     category: { type: "choice", instructions: "If this message reports a transaction, what category applies? Consider supported `categoryRules`. Choose General when uncertain.", criteria: Object.fromEntries(CATEGORIES.map((category) => [category, category])) },
   };
