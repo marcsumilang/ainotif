@@ -56,7 +56,6 @@ class MainActivity : FragmentActivity() {
         handleAuthIntent(intent)
 
         val app = AiNotifApplication.instance
-        val repository = app.repository
         val apiClient = app.apiClient
         val authManager = app.authManager
         val preferencesManager = app.preferencesManager
@@ -66,6 +65,13 @@ class MainActivity : FragmentActivity() {
         val initialDestination = intent?.getStringExtra("navigate_to") ?: Screen.Feed.route
 
         setContent {
+            val authState by authManager.userState.collectAsState()
+            val repository = app.repository
+            // A StateFlow update can arrive between reading UI state and the
+            // application session. Render only a matching owner activation.
+            if (!repository.isCurrentSession(authState)) return@setContent
+            // Dispose old owner flows, remembered rows and import/sync scopes.
+            key(repository.activationId) {
             AiNotifTheme {
                 val isOnboarded by preferencesManager.isOnboarded.collectAsState()
                 val isBiometricEnabled by preferencesManager.isBiometricEnabled.collectAsState()
@@ -239,6 +245,7 @@ class MainActivity : FragmentActivity() {
                     }
                 }
             }
+            }
         }
     }
 
@@ -274,12 +281,15 @@ class MainActivity : FragmentActivity() {
                             // Fallback: legacy short-lived JWT (older web builds).
                             app.authManager.setSessionWithToken(userId = userId, email = email, token = token!!)
                         }
-                        val result = app.repository.syncWithBackend()
                         val displayUser = if (email.isNotBlank()) email else userId
-                        val msg = if (result.isSuccess) {
+                        val offlineOnly = app.preferencesManager.isOfflineOnly.value
+                        val result = if (offlineOnly) null else app.repository.syncWithBackend()
+                        val msg = if (offlineOnly) {
+                            "Clerk Authenticated: $displayUser • Offline-only; local data was not synced"
+                        } else if (result?.isSuccess == true) {
                             "Clerk Authenticated: $displayUser • Data Synced"
                         } else {
-                            "Clerk Authenticated: $displayUser • Sync failed: ${result.exceptionOrNull()?.message ?: "unknown error"}"
+                            "Clerk Authenticated: $displayUser • Sync failed: ${result?.exceptionOrNull()?.message ?: "unknown error"}"
                         }
                         Toast.makeText(this@MainActivity, msg.take(180), Toast.LENGTH_LONG).show()
                     } catch (error: Exception) {

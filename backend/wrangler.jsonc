@@ -7,7 +7,6 @@
     "nodejs_compat"
   ],
   "vars": {
-    "TYPESAFE_MODEL": "jev-latest",
     "DEV_MOCK_AUTH": "false"
   }
 }

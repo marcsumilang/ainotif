@@ -8,6 +8,7 @@ data class ProcessNotificationRequest(
     val title: String? = null,
     val packageName: String? = null,
     val timestamp: Long? = null,
+    val sourceEventId: String? = null,
     val categoryRules: List<CategoryRuleDto> = emptyList()
 )
 
@@ -61,6 +62,11 @@ data class ProcessNotificationResponse(
 )
 
 @Serializable
+data class BackendHealthResponse(
+    val classificationConfigured: Boolean? = null
+)
+
+@Serializable
 data class TransactionDto(
     val id: String,
     val userId: String,
@@ -71,12 +77,14 @@ data class TransactionDto(
     val type: String,
     val rawNotification: String,
     val sourcePackage: String? = null,
+    val sourceEventId: String? = null,
     val timestamp: String? = null
 )
 
 @Serializable
 data class CreateTransactionDto(
     val id: String? = null,
+    val sourceEventId: String? = null,
     val amount: Double,
     val currency: String = "USD",
     val merchant: String,
@@ -106,6 +114,7 @@ data class AlertDto(
     val userId: String,
     val rawNotification: String,
     val sourcePackage: String? = null,
+    val sourceEventId: String? = null,
     val riskScore: Int,
     val reason: String,
     val phishingCues: String? = null,

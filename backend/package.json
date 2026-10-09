@@ -1,7 +1,7 @@
 {
   "name": "ainotif-backend",
   "version": "1.0.0",
-  "description": "Typesafe AI Notification & Scam Interception Backend for AiNotif",
+  "description": "OpenRouter AI Notification & Scam Interception Backend for AiNotif",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
@@ -11,7 +11,7 @@
     "build": "tsc",
     "start": "node dist/node.js",
     "test": "node --import tsx test/classifier.test.ts && node --import tsx test/api.test.ts && node --import tsx test/transaction-dedup.test.ts",
-    "evaluate:jev": "node --import tsx scripts/evaluate-jev.ts",
+    "evaluate:openrouter": "node --import tsx scripts/evaluate-jev.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "adb-install": "node ../scripts/adb-install.js"

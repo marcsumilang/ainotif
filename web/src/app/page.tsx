@@ -498,14 +498,14 @@ export default function LandingPage() {
                 <div className="w-12 h-12 rounded-2xl bg-[#054d28] text-[#9fe870] flex items-center justify-center mb-6">
                   <Cpu className="w-6 h-6 text-[#9fe870]" />
                 </div>
-                <h3 className="text-xl font-bold text-white mb-2">Typesafe AI Engine</h3>
+                <h3 className="text-xl font-bold text-white mb-2">OpenRouter Free Model Classifier</h3>
                 <p className="text-xs sm:text-sm text-[#e8ebe6] leading-relaxed">
-                  Understands messy push notifications from 100+ global banks. Automatically normalizes merchant names, cleans up terminal IDs, and assigns budget categories.
+                  Classifies notifications from your enabled apps and suggests transaction details for review. Model availability follows OpenRouter's free-model capacity.
                 </p>
               </div>
               <div className="mt-6 pt-4 border-t border-[#054d28] flex items-center gap-2 text-xs font-bold text-[#9fe870]">
                 <Zap className="w-4 h-4 text-[#9fe870]" />
-                <span>Zero Retention AI Processing</span>
+                <span>Provider ZDR Routing Requested</span>
               </div>
             </div>
 
@@ -517,7 +517,7 @@ export default function LandingPage() {
                 </div>
                 <h3 className="text-xl font-bold text-[#163300] mb-2">Scam & Phishing Radar</h3>
                 <p className="text-xs sm:text-sm text-[#6a6c6a] leading-relaxed">
-                  Real-time scoring for urgent coercion cues, spoofed domains, and fake bank notifications. Auto-hides malicious notifications so you never fall victim.
+                  Flags suspicious links and coercive messages for review. The original notification stays visible while you check the warning.
                 </p>
               </div>
               <div className="mt-6 pt-4 border-t border-[#e8ebe6] flex items-center gap-2 text-xs font-bold text-[#cb272f]">
@@ -715,7 +715,7 @@ export default function LandingPage() {
               Simple Protection. Predictable Value.
             </h2>
             <p className="text-sm text-[#868685] mt-2">
-              Start with our powerful Free tier. Upgrade anytime to Pro Guardian for $10/month with Clerk Billing to unlock unlimited AI analysis, data export, and threat radar forensics.
+              Start with our Free tier. Pro Guardian adds full notification history, exports, and threat radar for $10/month. AI classification uses OpenRouter's free-model capacity and may fall back when that service is unavailable.
             </p>
           </div>
 
@@ -792,13 +792,13 @@ export default function LandingPage() {
                 </div>
 
                 <p className="text-xs text-[#e8ebe6] mb-6">
-                  Unlimited intelligence, deep scam forensics, full financial ledger history, and instant data export.
+                  Full notification and financial history, deep scam forensics, and instant data export. AI classification depends on OpenRouter's free-model availability.
                 </p>
 
                 <ul className="space-y-3 mb-8 text-xs text-[#e8ebe6]">
                   <li className="flex items-center gap-2.5">
                     <Check className="w-4 h-4 text-[#9fe870] shrink-0 stroke-[3]" />
-                    <span className="font-semibold">Unlimited AI notification processing</span>
+                    <span className="font-semibold">Unlimited notification history and sync</span>
                   </li>
                   <li className="flex items-center gap-2.5">
                     <Check className="w-4 h-4 text-[#9fe870] shrink-0 stroke-[3]" />

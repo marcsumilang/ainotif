@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { getTransactions, deleteTransaction, saveTransaction, updateTransaction, bulkDeleteTransactions, bulkUpdateCategory, TransactionIdConflictError } from "../db/index.js";
-import { CURRENCIES, CATEGORIES } from "../ai/classifier.js";
+import { CURRENCIES, CATEGORIES, notificationRecordId } from "../ai/classifier.js";
 import { z } from "zod";
 
 export const transactionsRouter = new Hono();
@@ -114,6 +114,7 @@ transactionsRouter.post("/bulk-categorize", async (c) => {
 
 const CreateTransactionSchema = z.object({
   id: z.string().uuid().optional(),
+  sourceEventId: z.string().trim().min(1).max(255).optional(),
   amount: z.number().positive().finite(),
   currency: z.enum(CURRENCIES).default("USD"),
   merchant: z.string().min(1).max(255),
@@ -135,10 +136,10 @@ transactionsRouter.post("/", async (c) => {
     return c.json({ error: "Validation error", issues: parsed.error.issues }, 400);
   }
 
-  const { id, amount, currency, merchant, category, type, rawNotification, sourcePackage, timestamp } = parsed.data;
+  const { id, sourceEventId, amount, currency, merchant, category, type, rawNotification, sourcePackage, timestamp } = parsed.data;
   try {
     const created = await saveTransaction({
-      id,
+      id: id ?? notificationRecordId(userId, sourceEventId),
       userId,
       amount,
       currency,
@@ -147,6 +148,7 @@ transactionsRouter.post("/", async (c) => {
       type,
       rawNotification,
       sourcePackage,
+      sourceEventId,
       timestamp: timestamp ? new Date(timestamp) : new Date(),
     });
 

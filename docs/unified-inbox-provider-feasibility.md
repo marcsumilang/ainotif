@@ -1,0 +1,70 @@
+# Unified inbox provider feasibility
+
+Date: 2026-10-09. Slice 0 research only. No provider app was registered, no account authenticated, no secret inspected, and no external or production state changed.
+
+## Recommendation
+
+Proceed with Slice 0 architecture and local Android inbox work while treating provider access as separate, approval-gated integrations. Gmail is technically feasible, but broad message access requires Google's restricted-scope verification for public use and a security assessment if restricted Gmail data is stored or transmitted through AiNotif servers. A device-only Gmail code reader still needs a separate Google OAuth grant and must call Google directly; it cannot promise access to every OTP because Android 15 redacts detected OTP notification text from untrusted notification listeners. Slack is feasible for narrowly scoped events or bot-visible channels. A full personal reader that reads a user's arbitrary channel/DM history conflicts with Marketplace scope rules and is constrained by low history API limits for non-Marketplace apps.
+
+The existing `Offline-Only` setting should remain the strictest mode: no AiNotif sync and no Gmail/Slack requests. A separate, explicitly online **On-device Gmail Codes** grant can fetch selected recent Gmail data directly from Google without sending it to AiNotif; label that as provider-connected and local-processing, never as Offline-Only. Keep general Gmail/Slack connections off until independently enabled by the user.
+
+## Current project facts
+
+- The Android manifest currently declares `READ_SMS`; the existing product imports finance-related historical SMS. Whether the current Play declaration/approval is active was not verified. The app is not currently a general SMS inbox. Do not broaden imported content to personal SMS.
+- The Android notification listener already drops OTPs/credentials before cloud analysis. Android 15 can redact OTP content before a third-party notification listener receives it, so notification-based Codes are best effort.
+- Settings describe Offline-Only as keeping records in the local Room database and never syncing to cloud; sync actions are disabled or rejected in this mode. Preserve that promise across all future connectors.
+- Current notification processing logs retain up to 500 records; they are operational logs, not a retention policy for a durable inbox. Inbox storage needs its own policy and deletion path.
+- The plan proposes 30-day ordinary cloud retention, but this remains **unaccepted**. No retention job or UI copy should treat it as settled. Define the Saved-item policy at the same time.
+
+## Provider feasibility and prerequisites
+
+| Provider/path | Feasibility and boundary | Before implementation or launch |
+|---|---|---|
+| Google OAuth / Gmail inbox | Feasible with user-granted scopes and a Google OAuth client. `gmail.metadata` exposes headers/labels but not bodies. `gmail.readonly` exposes messages and settings and is a **restricted** scope. A public app requesting restricted data needs OAuth verification; storing or transmitting that data through a server also requires a Google-approved security assessment. | Decide internal/personal versus public distribution and verification owner; register the Google Cloud project/client; finalize least-privilege use case and exact scopes; publish matching app name, support contact, home page and privacy policy; complete Google consent-screen/scope verification as applicable. If server access remains in scope, budget for the independent security assessment and recurring review. User/workspace admin policy may also block grants. Do not store message bodies in durable jobs, logs, traces, or analytics. |
+| Gmail direct local Codes | Feasible as a distinct Android client grant that fetches a bounded recent set directly from Gmail, extracts locally, and never sends code/body/token to AiNotif. This is still network access to Google and not a strict offline feature. Native installed-app OAuth needs a Google-supported flow, PKCE, and a supported Android redirect; Google's native OAuth guide says custom URI schemes and loopback redirects are unsupported/deprecated for Android. | Decide whether this is required for the first public release; implement a native-supported authorization flow and protected token storage; request Gmail body access only for this explicit feature; set freshness from the original message timestamp; bound fetch/backfill; independently revoke this grant; verify with Google whether planned direct-device use falls under its API policies and public verification path. Keep it blocked while Offline-Only is on. |
+| Android OTP from notifications/SMS | Notification extraction is feasible only when Android exposes the text; Android 15 redacts detected OTPs from untrusted `NotificationListenerService` clients. SMS-based money management is a listed potential exception for SMS permissions, subject to Play review; that does not authorize collecting or uploading unrelated personal SMS. Play explicitly bars a budgeting app from exfiltrating nonfinancial/personal SMS history. Broad OTP reading is not justified by the existing finance feature. | Keep existing finance-only SMS handling. Verify the current Play declaration; before any changed SMS use, submit an accurate declaration and obtain approval for the specific eligible core use; document prominent in-app disclosure/consent and stop access when no longer eligible. Do not claim arbitrary SMS OTP support. The SMS Retriever API is for an app's own formatted verification flow, not a general inbox reader. Test supported notification/manual-share routes and graceful Android 15 fallback. |
+| Slack personal reader | Slack OAuth can grant user scopes, but access follows the installing user's visibility. Slack Marketplace review guidelines disallow user-token `*:history` scopes; this prevents promising a public Marketplace app that reads a user's broad channel/DM history as a personal mirror. | Choose distribution and product scope before coding: internal/personal evaluation versus public Marketplace app. Do not build around Marketplace-prohibited history scopes. Obtain workspace admin approval where required; request only scopes for selected conversations/events; explain each optional scope. |
+| Slack bot/channel feed | Feasible for conversations the installed bot can access and subscribed events permitted by its scopes. It is a bot feed, not a personal reader of everything the user can see. Event delivery needs signature verification, deduplication/retry handling, revocation handling, and a secure public endpoint or Socket Mode. | Choose bot feed if the product can accept channel invitation and bot visibility boundaries. Create the Slack app, configure OAuth redirect and least scopes, validate signing secret, subscribe to needed message/edit/delete events, honor workspace policy and event retries, and submit to Marketplace if broad customer distribution is desired. Marketplace approval is a product/distribution decision, not yet completed. |
+
+## Slack history limitation
+
+As of the reviewed Slack documentation, non-Marketplace apps created after 2025-05-29 are limited on both `conversations.history` and `conversations.replies` to one request per minute and at most 15 messages per request; the rule also applies to new installs of existing non-Marketplace apps. Marketplace-approved apps are not subject to that specific reduction. This makes history backfill and recovery slow for a broad inbox even where scope access exists. Prefer bounded recent history plus Events API for forward capture, with an explicit backfill limit and resumable cursor. Slack says the Events API only delivers what the authorizing user or bot can see; callback signatures, quick acknowledgement, and retry/deduplication handling are required.
+
+## Proposed privacy and retention modes
+
+Treat these as implementation definitions; duration choices still need product approval.
+
+1. **Offline-Only (existing, strict override):** all records stay on the device. Block AiNotif API traffic, provider API traffic, cloud sync, uploads, connector background jobs, and cloud classification. Turning this on suspends connectors; it does not silently revoke them or imply deletion of already-clouded records.
+2. **Local Inbox:** capture the sources explicitly selected on this phone and keep inbox content local. No AiNotif cloud sync, server AI, or provider connection. Use local processing only; source notification visibility and current SMS eligibility still apply. Define a local inbox retention and clear/export policy before implementation.
+3. **Cloud Inbox:** ordinary, non-credential inbox items may sync to the signed-in AiNotif account. Each Gmail/Slack provider connection and each cloud-AI use remains a separate opt-in. Use minimal sanitized content, owner-scoped storage, item-level source provenance, and separate disconnect choices for keeping or deleting imported copies.
+4. **On-device Gmail Codes (separate grant):** explicit direct Google access for bounded recent mail; process on the phone and retain fresh candidates in memory only (the plan's proposed maximum display period is two minutes, shortened by a shorter known issuer expiry). Never forward token, message body, or code to AiNotif, AI, telemetry, logs, database, clipboard automation, or ordinary sync. This mode is online to Google and incompatible with strict Offline-Only while active.
+
+For Cloud Inbox, **30 days** of ordinary content is only the current proposal, not a decision. Before it can ship, choose the ordinary-item TTL, whether Saved items have a distinct policy, local-only retention, backup/index/cache deletion timing, and what disconnect/account deletion can guarantee. Enforce provider terms as upper bounds and expose retention before consent. Financial records retain their existing policy; do not apply inbox limits to the finance ledger.
+
+## Slice 0 prerequisite checklist
+
+- [ ] Establish the current history/idempotency/Offline-Only baseline first; the repository has extensive pending implementation changes and this feasibility review did not validate them.
+- [ ] Decide the mode semantics above, whether Gmail direct Codes are needed for first public release, and a retention policy; leave the 30-day proposal explicitly pending until chosen.
+- [ ] Confirm Google distribution target, Cloud project ownership, OAuth verification owner, exact data flows, scope set, and whether any restricted data touches AiNotif servers. Do not request Gmail scopes before this is settled.
+- [ ] Confirm SMS scope remains finance-only unless Play approves a precise additional permitted use. A multi-phone SMS sync exception does not make a general personal inbox or unrelated personal SMS upload eligible.
+- [ ] Choose Slack: internal/personal feasibility only, bot-visible channel feed, or a separately approved public Marketplace product. Drop broad personal-history mirroring from the public Marketplace promise.
+- [ ] Inventory and separate secret storage, token encryption/rotation, owner/account partitioning, deletion/revocation, and observability redaction before any connector starts.
+- [ ] Define selected source/accounts/labels/channels, bounded history/backfill, cursor recovery, webhook verification, idempotency, retries, and pause/revoke behavior before provider ingestion.
+- [ ] Prepare user-facing disclosures and consent, privacy policy/data inventory, and Google Play Data Safety/declaration changes for the actual shipped sources and flows.
+- [ ] Record each approval as pending until an owner completes it and produces evidence. Provider app registration, OAuth verification, CASA/security assessment, Play declaration approval, Slack workspace/admin approval, and Marketplace review have not been completed.
+
+## Primary documentation reviewed
+
+- [Gmail API scopes](https://developers.google.com/workspace/gmail/api/auth/scopes) (Google for Developers; updated 2026-09-10): metadata/body scope difference, restricted scope verification, server security assessment.
+- [Google OAuth restricted-scope verification](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification): public verification, distribution exceptions, restricted server data security assessment.
+- [Google OAuth native app flow](https://developers.google.com/identity/protocols/oauth2/native-app): PKCE, supported installed-app OAuth guidance, Android redirect caveats.
+- [Google Play SMS/Call Log permission policy](https://support.google.com/googleplay/android-developer/answer/10208820?hl=en): eligible exceptions, money-management and smishing use cases, no unrelated personal SMS exfiltration, alternatives.
+- [Android 15 OTP redaction](https://developer.android.com/about/versions/15/behavior-changes-all#otp-redaction): limits on untrusted notification listeners.
+- [Slack OAuth installation](https://api.slack.com/authentication/oauth-v2): requested scopes and user consent; bot and user token distinction.
+- [Slack Marketplace guidelines](https://api.slack.com/docs/slack-apps-guidelines) and [review guide](https://api.slack.com/directory/app-review-guide): Marketplace scope restrictions and review requirements.
+- [Slack conversation history](https://api.slack.com/methods/conversations.history) and [non-Marketplace rate-limit update](https://api.slack.com/changelog/2025-05-terms-rate-limit-update-and-faq): history access, rate limits, accessible conversations.
+- [Slack Events API](https://docs.slack.dev/apis/events-api/) and [request verification](https://api.slack.com/docs/verifying-requests-from-slack): visibility, event delivery, retries, and signatures.
+
+## Unresolved external gates
+
+No Google Cloud project/client, OAuth grant, Gmail verification/security assessment, Play Console declaration, Slack app/workspace install, workspace administrator approval, or Marketplace review was opened or approved in this work. This document records requirements and a recommended scope; it does not claim those gates are complete.

@@ -17,33 +17,114 @@ import com.ainotif.service.FilterDecision
 import com.ainotif.service.HeuristicClassifier
 import com.ainotif.service.RegexFilter
 import com.ainotif.service.NotificationActionPolicy
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import java.util.UUID
 
 sealed class ProcessNotificationOutcome {
     data class DroppedSecurityCode(val reason: String) : ProcessNotificationOutcome()
     data class ParsedTransaction(val transaction: TransactionEntity, val aiResult: AiAnalysisResult) : ProcessNotificationOutcome()
-    data class InterceptedScam(val alert: AlertEntity, val aiResult: AiAnalysisResult) : ProcessNotificationOutcome()
+    data class InterceptedScam(
+        val alert: AlertEntity,
+        val aiResult: AiAnalysisResult,
+        val classificationError: String? = null
+    ) : ProcessNotificationOutcome()
+    object Archived : ProcessNotificationOutcome()
     object Ignored : ProcessNotificationOutcome()
-    data class Error(val message: String) : ProcessNotificationOutcome()
+    data class Error(
+        val message: String,
+        val stopImport: Boolean = false,
+        val fallbackReviewRequired: Boolean = false
+    ) : ProcessNotificationOutcome()
     data class ReviewRequired(val reason: String) : ProcessNotificationOutcome()
 }
 
 class AuthenticationRequiredException : IllegalStateException("Sign in to sync cloud data")
+class OfflineOnlySyncException : IllegalStateException("Offline-Only mode is enabled; cloud sync is disabled")
 
 class TransactionRepository(
     private val db: AppDatabase,
     private val apiClient: AiNotifApiClient,
     private val authManager: ClerkAuthManager,
     val preferencesManager: UserPreferencesManager,
-    val categoryRulesManager: CategoryRulesManager
+    val categoryRulesManager: CategoryRulesManager,
+    private val sessionState: ClerkAuthManager.UserState,
+    private val profileId: String?
 ) {
+    private val ownerId = (sessionState as? ClerkAuthManager.UserState.SignedIn)?.userId
+    private val sessionGuard = ProfileSessionGuard(sessionState, { authManager.userState.value }, ownerId,
+        { preferencesManager.isOfflineOnly.value })
+
+    val activationId: String = UUID.randomUUID().toString()
+
+    fun requireActiveProfile() = sessionGuard.requireActive()
+
+    fun isCurrentSession(state: ClerkAuthManager.UserState): Boolean =
+        state === sessionState && authManager.userState.value === sessionState
+
+    suspend fun totalDebitSince(timestamp: Long): Double {
+        requireActiveProfile()
+        return (db.transactionDao().getTotalDebitSince(timestamp) ?: 0.0).also { requireActiveProfile() }
+    }
+
+    private suspend fun cloudTokenOrNull(): String? {
+        currentCoroutineContext().ensureActive()
+        requireActiveProfile()
+        if (preferencesManager.isOfflineOnly.value || ownerId == null) return null
+        val token = cloudCall { authManager.getAuthToken(ownerId) }
+        currentCoroutineContext().ensureActive()
+        requireActiveProfile()
+        if (preferencesManager.isOfflineOnly.value) return null
+        return token
+    }
+
+    private suspend fun <T> cloudCall(call: suspend () -> T): T = coroutineScope {
+        sessionGuard.requireCloudAccess()
+        val operation = async {
+            sessionGuard.requireCloudAccess()
+            val result = call()
+            currentCoroutineContext().ensureActive()
+            sessionGuard.requireCloudAccess()
+            result
+        }
+        val invalidation = launch(start = CoroutineStart.UNDISPATCHED) {
+            combine(authManager.userState, preferencesManager.isOfflineOnly) { state, offline ->
+                state !== sessionState || offline
+            }.first { it }
+            operation.cancel(ProfileChangedException())
+        }
+        try {
+            operation.await()
+        } finally {
+            invalidation.cancel()
+        }
+    }
+
     val transactionsFlow: Flow<List<TransactionEntity>> = db.transactionDao().getAllTransactionsFlow()
     val activeAlertsFlow: Flow<List<AlertEntity>> = db.alertDao().getActiveAlertsFlow()
     val allAlertsFlow: Flow<List<AlertEntity>> = db.alertDao().getAllAlertsFlow()
     val logsFlow: Flow<List<NotificationLogEntity>> = db.notificationLogDao().getRecentLogsFlow()
 
-    suspend fun hasSimilarRecord(rawNotification: String, timestamp: Long, toleranceMs: Long = 300000L): Boolean {
+    suspend fun hasSimilarRecord(
+        rawNotification: String,
+        timestamp: Long,
+        toleranceMs: Long = 300000L,
+        sourceEventId: String? = null
+    ): Boolean {
+        requireActiveProfile()
+        if (!sourceEventId.isNullOrBlank()) {
+            return db.transactionDao().hasSourceEvent(sourceEventId) ||
+                db.alertDao().hasSourceEvent(sourceEventId) ||
+                db.notificationLogDao().hasProcessedSourceEvent(sourceEventId)
+        }
         if (rawNotification.isBlank()) return false
         val hasTx = db.transactionDao().hasSimilarTransaction(rawNotification, timestamp, toleranceMs)
         if (hasTx) return true
@@ -58,6 +139,7 @@ class TransactionRepository(
         timestamp: Long,
         toleranceMs: Long = 300000L
     ): Boolean {
+        requireActiveProfile()
         return db.transactionDao().hasSimilarTransactionExact(rawNotification, amount, currency, merchant, timestamp, toleranceMs)
     }
 
@@ -66,14 +148,19 @@ class TransactionRepository(
         text: String?,
         packageName: String?,
         timestamp: Long = System.currentTimeMillis(),
-        skipIfDuplicate: Boolean = true
+        skipIfDuplicate: Boolean = true,
+        sourceEventId: String? = null
     ): ProcessNotificationOutcome {
+        currentCoroutineContext().ensureActive()
+        requireActiveProfile()
         val rawNotification = "${title?.let { "$it: " }.orEmpty()}${text.orEmpty()}".trim()
-        if (skipIfDuplicate && hasSimilarRecord(rawNotification, timestamp)) {
+        if (skipIfDuplicate && hasSimilarRecord(rawNotification, timestamp, sourceEventId = sourceEventId)) {
             return ProcessNotificationOutcome.Ignored
         }
 
-        val decision = RegexFilter.evaluate(title, text, packageName)
+        // Every notification from a user-enabled app is sent through the server
+        // classifier. OTP/password matches are still dropped on-device first.
+        val decision = RegexFilter.evaluate(title, text, packageName, classifyAll = true)
 
         return when (decision) {
             is FilterDecision.DropSecurityCode -> {
@@ -83,7 +170,8 @@ class TransactionRepository(
                         text = "[REDACTED SECURITY CODE/OTP]",
                         packageName = packageName,
                         decision = "DROPPED_OTP",
-                        timestamp = timestamp
+                        timestamp = timestamp,
+                        sourceEventId = sourceEventId
                     )
                 )
                 ProcessNotificationOutcome.DroppedSecurityCode(decision.reason)
@@ -95,7 +183,8 @@ class TransactionRepository(
                         text = text,
                         packageName = packageName,
                         decision = "IGNORED",
-                        timestamp = timestamp
+                        timestamp = timestamp,
+                        sourceEventId = sourceEventId
                     )
                 )
                 ProcessNotificationOutcome.Ignored
@@ -107,16 +196,17 @@ class TransactionRepository(
                         text = text,
                         packageName = packageName,
                         decision = "FORWARDED_AI",
-                        timestamp = timestamp
+                        timestamp = timestamp,
+                        sourceEventId = sourceEventId
                     )
                 )
                 db.notificationLogDao().pruneOldLogs()
 
                 // Offline-only or signed-out (incl. demo) sessions never send mock
                 // bearers; they run the on-device heuristic engine.
-                val token = authManager.getAuthToken()
+                val token = cloudTokenOrNull()
                 if (preferencesManager.isOfflineOnly.value || token == null) {
-                    return processLocally(title, text, packageName, timestamp)
+                    return processLocally(title, text, packageName, timestamp, sourceEventId)
                 }
 
                 val request = ProcessNotificationRequest(
@@ -124,26 +214,21 @@ class TransactionRepository(
                     title = title,
                     packageName = packageName,
                     timestamp = timestamp,
+                    sourceEventId = sourceEventId,
                     categoryRules = serverCategoryRules()
                 )
 
-                val result = apiClient.processNotification(request, token)
+                val result = cloudCall { apiClient.processNotification(request, token) }
                 result.fold(
                     onSuccess = { response ->
-                        val outcome = handleSuccessfulAnalysis(
-                            response.analysis, response.savedRecordId, title, text, packageName, timestamp, isSynced = true
+                        handleSuccessfulAnalysis(
+                            response.analysis, response.savedRecordId, title, text, packageName, timestamp, isSynced = true, sourceEventId = sourceEventId
                         )
-                        if (response.analysis.diagnostics.engine != "jev" && outcome !is ProcessNotificationOutcome.InterceptedScam) {
-                            ProcessNotificationOutcome.Error(
-                                "Cloud AI is unavailable (${response.analysis.diagnostics.error ?: response.analysis.diagnostics.engine}); kept for on-device review."
-                            )
-                        } else {
-                            outcome
-                        }
                     },
                     onFailure = { err ->
+                        if (err is CancellationException) throw err
                         // Preserve conservative local review while exposing the failed cloud classification.
-                        val fallback = processLocally(title, text, packageName, timestamp)
+                        val fallback = processLocally(title, text, packageName, timestamp, sourceEventId)
                         if (fallback is ProcessNotificationOutcome.InterceptedScam) fallback
                         else ProcessNotificationOutcome.Error(
                             "Cloud notification classification failed: ${err.message ?: "unknown network error"}; kept for on-device review."
@@ -159,10 +244,13 @@ class TransactionRepository(
         text: String?,
         packageName: String?,
         timestamp: Long,
-        forceLocal: Boolean = false
+        forceLocal: Boolean = false,
+        sourceEventId: String? = null
     ): ProcessNotificationOutcome {
+        currentCoroutineContext().ensureActive()
+        requireActiveProfile()
         val rawNotification = "${title?.let { "$it: " }.orEmpty()}${text.orEmpty()}".trim()
-        if (hasSimilarRecord(rawNotification, timestamp)) {
+        if (hasSimilarRecord(rawNotification, timestamp, sourceEventId = sourceEventId)) {
             return ProcessNotificationOutcome.Ignored
         }
 
@@ -176,12 +264,17 @@ class TransactionRepository(
                         text = "[REDACTED SECURITY CODE/OTP]",
                         packageName = packageName,
                         decision = "DROPPED_OTP",
-                        timestamp = timestamp
+                        timestamp = timestamp,
+                        sourceEventId = sourceEventId
                     )
                 )
                 ProcessNotificationOutcome.DroppedSecurityCode(decision.reason)
             }
             FilterDecision.Ignore -> {
+                db.notificationLogDao().insertLog(NotificationLogEntity(
+                    title = title, text = text, packageName = packageName,
+                    decision = "IGNORED", timestamp = timestamp, sourceEventId = sourceEventId
+                ))
                 ProcessNotificationOutcome.Ignored
             }
             is FilterDecision.ForwardForAi -> {
@@ -191,44 +284,54 @@ class TransactionRepository(
                         text = text,
                         packageName = packageName,
                         decision = "FORWARDED_AI",
-                        timestamp = timestamp
+                        timestamp = timestamp,
+                        sourceEventId = sourceEventId
                     )
                 )
 
-                val token = authManager.getAuthToken()
+                val token = if (forceLocal) null else cloudTokenOrNull()
                 if (forceLocal) {
-                    processLocally(title, text, packageName, timestamp)
+                    processLocally(title, text, packageName, timestamp, sourceEventId)
                 } else if (preferencesManager.isOfflineOnly.value) {
-                    ProcessNotificationOutcome.Error("Offline-Only mode is enabled. Turn it off to classify SMS with cloud AI.")
+                    ProcessNotificationOutcome.Error("Offline-Only mode is enabled. Turn it off to classify SMS with cloud AI.", stopImport = true)
                 } else if (token == null) {
-                    ProcessNotificationOutcome.Error("Sign in to classify SMS with cloud AI.")
+                    ProcessNotificationOutcome.Error("Sign in to classify SMS with cloud AI.", stopImport = true)
                 } else {
                     val request = ProcessNotificationRequest(
                         text = text.orEmpty(),
                         title = title,
                         packageName = packageName,
                         timestamp = timestamp,
+                        sourceEventId = sourceEventId,
                         categoryRules = serverCategoryRules()
                     )
 
-                    val result = apiClient.processNotification(request, token)
+                    val result = cloudCall { apiClient.processNotification(request, token) }
                     result.fold(
                         onSuccess = { response ->
                             val outcome = handleSuccessfulAnalysis(
-                                response.analysis, response.savedRecordId, title, text, packageName, timestamp, isSynced = true
+                                response.analysis, response.savedRecordId, title, text, packageName, timestamp, isSynced = true, sourceEventId = sourceEventId
                             )
                             val diagnostics = response.analysis.diagnostics
-                            if (diagnostics.engine != "jev" && outcome !is ProcessNotificationOutcome.InterceptedScam) {
-                                ProcessNotificationOutcome.Error(
-                                    "Cloud AI is unavailable (${diagnostics.error ?: diagnostics.engine}); no transaction was imported. Try again later."
-                                )
+                            if (diagnostics.engine != "openrouter") {
+                                val message = "Cloud AI is unavailable (${diagnostics.error ?: diagnostics.engine}); no more SMS will be sent for classification."
+                                when (outcome) {
+                                    is ProcessNotificationOutcome.InterceptedScam -> outcome.copy(classificationError = message)
+                                    else -> ProcessNotificationOutcome.Error(
+                                        message,
+                                        stopImport = true,
+                                        fallbackReviewRequired = outcome is ProcessNotificationOutcome.ReviewRequired
+                                    )
+                                }
                             } else {
                                 outcome
                             }
                         },
                         onFailure = { error ->
+                            if (error is CancellationException) throw error
                             ProcessNotificationOutcome.Error(
-                                "Cloud SMS classification failed: ${error.message ?: "unknown network error"}"
+                                "Cloud SMS classification failed: ${error.message ?: "unknown network error"}; no more SMS will be sent for classification.",
+                                stopImport = true
                             )
                         }
                     )
@@ -241,10 +344,13 @@ class TransactionRepository(
         title: String?,
         text: String?,
         packageName: String?,
-        timestamp: Long
+        timestamp: Long,
+        sourceEventId: String?
     ): ProcessNotificationOutcome {
+        currentCoroutineContext().ensureActive()
+        requireActiveProfile()
         val analysis = HeuristicClassifier.classify(title, text, packageName)
-        return handleSuccessfulAnalysis(analysis, null, title, text, packageName, timestamp, isSynced = false)
+        return handleSuccessfulAnalysis(analysis, null, title, text, packageName, timestamp, isSynced = false, sourceEventId = sourceEventId)
     }
 
     private suspend fun handleSuccessfulAnalysis(
@@ -254,13 +360,17 @@ class TransactionRepository(
         text: String?,
         packageName: String?,
         timestamp: Long,
-        isSynced: Boolean
+        isSynced: Boolean,
+        sourceEventId: String?
     ): ProcessNotificationOutcome {
+        currentCoroutineContext().ensureActive()
+        requireActiveProfile()
         val riskThreshold = preferencesManager.getEffectiveRiskThreshold()
 
         if (analysis.decision.requiresReview) {
             db.notificationLogDao().insertLog(NotificationLogEntity(
-                title = title, text = text, packageName = packageName, decision = "REVIEW", timestamp = timestamp
+                title = title, text = text, packageName = packageName, decision = "REVIEW", timestamp = timestamp,
+                sourceEventId = sourceEventId
             ))
         }
 
@@ -273,9 +383,14 @@ class TransactionRepository(
                 reason = analysis.scamReason ?: "Suspicious alert detected",
                 phishingCues = analysis.scamIndicators.joinToString("; "),
                 timestamp = timestamp,
+                sourceEventId = sourceEventId,
                 isSynced = isSynced && savedRecordId != null
             )
             db.alertDao().insertAlert(alert)
+            db.notificationLogDao().insertLog(NotificationLogEntity(
+                title = title, text = text, packageName = packageName, decision = "SCAM_ALERT", timestamp = timestamp,
+                sourceEventId = sourceEventId
+            ))
             return ProcessNotificationOutcome.InterceptedScam(alert, analysis)
         } else if (NotificationActionPolicy.canSaveTransaction(analysis) && analysis.transaction != null) {
             // Apply user-defined custom categorization rules
@@ -287,7 +402,7 @@ class TransactionRepository(
             val rawFormatted = "${title?.let { "$it: " }.orEmpty()}${text.orEmpty()}".trim()
 
             // Check if exact similar transaction already exists
-            val isDuplicate = db.transactionDao().hasSimilarTransactionExact(
+            val isDuplicate = sourceEventId == null && db.transactionDao().hasSimilarTransactionExact(
                 rawNotification = rawFormatted,
                 amount = analysis.transaction.amount,
                 currency = analysis.transaction.currency,
@@ -309,13 +424,24 @@ class TransactionRepository(
                 rawNotification = rawFormatted,
                 sourcePackage = packageName,
                 timestamp = timestamp,
+                sourceEventId = sourceEventId,
                 isSynced = isSynced && savedRecordId != null
             )
             db.transactionDao().insertTransaction(tx)
+            db.notificationLogDao().insertLog(NotificationLogEntity(
+                title = title, text = text, packageName = packageName, decision = "PROCESSED_TRANSACTION", timestamp = timestamp,
+                sourceEventId = sourceEventId
+            ))
             return ProcessNotificationOutcome.ParsedTransaction(tx, analysis)
         } else {
+            if (!analysis.decision.requiresReview) {
+                db.notificationLogDao().insertLog(NotificationLogEntity(
+                    title = title, text = text, packageName = packageName, decision = "ANALYZED_IGNORED", timestamp = timestamp,
+                    sourceEventId = sourceEventId
+                ))
+            }
             return if (analysis.decision.requiresReview) ProcessNotificationOutcome.ReviewRequired(analysis.explanation)
-                else ProcessNotificationOutcome.Ignored
+                else ProcessNotificationOutcome.Archived
         }
     }
 
@@ -325,10 +451,11 @@ class TransactionRepository(
         }
 
     suspend fun updateTransaction(tx: TransactionEntity): Result<Unit> = runCatching {
+        requireActiveProfile()
         db.transactionDao().updateTransaction(tx)
-        val token = authManager.getAuthToken()
+        val token = cloudTokenOrNull()
         if (!preferencesManager.isOfflineOnly.value && token != null) {
-            apiClient.updateTransaction(
+            cloudCall { apiClient.updateTransaction(
                 txId = tx.id,
                 update = UpdateTransactionDto(
                     merchant = tx.merchant,
@@ -337,14 +464,15 @@ class TransactionRepository(
                     note = tx.note
                 ),
                 authToken = token
-            )
+            ).getOrThrow() }
         }
     }
 
     suspend fun deleteTransaction(id: String): Result<Boolean> = runCatching {
-        val token = authManager.getAuthToken()
+        requireActiveProfile()
+        val token = cloudTokenOrNull()
         val deletedFromCloud = if (!preferencesManager.isOfflineOnly.value && token != null) {
-            val deleted = apiClient.deleteTransaction(id, token).getOrThrow()
+            val deleted = cloudCall { apiClient.deleteTransaction(id, token) }.getOrThrow()
             if (!deleted) throw IllegalStateException("Cloud did not confirm the transaction deletion")
             true
         } else {
@@ -355,21 +483,25 @@ class TransactionRepository(
     }
 
     suspend fun clearAllData(): Result<Unit> = runCatching {
+        requireActiveProfile()
         db.transactionDao().clearAll()
         db.alertDao().clearAll()
         db.notificationLogDao().clearLogs()
     }
 
     suspend fun syncWithBackend(): Result<Unit> = runCatching {
-        val token = authManager.getAuthToken()
+        requireActiveProfile()
+        if (preferencesManager.isOfflineOnly.value) throw OfflineOnlySyncException()
+        val token = cloudTokenOrNull()
             ?: throw AuthenticationRequiredException()
 
         // 1. Push any local unsynced transactions to backend
         val unsyncedTxs = db.transactionDao().getUnsyncedTransactions()
         for (tx in unsyncedTxs) {
-            val created = apiClient.createTransaction(
+            val created = cloudCall { apiClient.createTransaction(
                 CreateTransactionDto(
                     id = tx.id,
+                    sourceEventId = tx.sourceEventId,
                     amount = tx.amount,
                     currency = tx.currency,
                     merchant = tx.merchant,
@@ -380,26 +512,30 @@ class TransactionRepository(
                     timestamp = tx.timestamp
                 ),
                 token
-            ).getOrElse { throw IllegalStateException("Transaction upload failed: ${it.message ?: "unknown error"}", it) }
-            if (created) {
-                db.transactionDao().markSynced(tx.id)
-            }
+            ) }.getOrElse { throw IllegalStateException("Transaction upload failed: ${it.message ?: "unknown error"}", it) }
+            if (!created) throw IllegalStateException("Cloud did not confirm the transaction upload")
+            db.transactionDao().markSynced(tx.id)
         }
 
         // 2. Fetch remote transactions and reconcile with local transactions
-        val remoteTxs = apiClient.fetchTransactions(token)
+        val remoteTxs = cloudCall { apiClient.fetchTransactions(token) }
             .getOrElse { throw IllegalStateException("Transaction download failed: ${it.message ?: "unknown error"}", it) }
         val entities = mutableListOf<TransactionEntity>()
         for (dto in remoteTxs) {
             val parsedTime = parseTimestampOrNull(dto.timestamp) ?: continue
-            val existingLocal = db.transactionDao().findMatchingTransaction(
-                rawNotification = dto.rawNotification,
-                amount = dto.amount,
-                currency = dto.currency,
-                merchant = dto.merchant,
-                timestamp = parsedTime,
-                toleranceMs = 300000L
-            )
+            val existingLocal = if (!dto.sourceEventId.isNullOrBlank()) {
+                db.transactionDao().findBySourceEventId(dto.sourceEventId)
+                    ?: db.transactionDao().findById(dto.id)
+            } else {
+                db.transactionDao().findById(dto.id) ?: db.transactionDao().findMatchingTransaction(
+                    rawNotification = dto.rawNotification,
+                    amount = dto.amount,
+                    currency = dto.currency,
+                    merchant = dto.merchant,
+                    timestamp = parsedTime,
+                    toleranceMs = 300000L
+                )
+            }
             if (existingLocal != null && existingLocal.id != dto.id) {
                 db.transactionDao().deleteById(existingLocal.id)
             }
@@ -415,6 +551,7 @@ class TransactionRepository(
                     rawNotification = dto.rawNotification,
                     sourcePackage = dto.sourcePackage,
                     timestamp = parsedTime,
+                    sourceEventId = dto.sourceEventId ?: existingLocal?.sourceEventId,
                     // Preserve locally edited notes across server syncs.
                     note = existingLocal?.note?.takeIf { it.isNotBlank() },
                     isSynced = true
@@ -424,7 +561,7 @@ class TransactionRepository(
         db.transactionDao().insertAll(entities)
 
         // 3. Fetch remote alerts (never overwrite a local dismissal)
-        val remoteAlerts = apiClient.fetchAlerts(token)
+        val remoteAlerts = cloudCall { apiClient.fetchAlerts(token) }
             .getOrElse { throw IllegalStateException("Alert download failed: ${it.message ?: "unknown error"}", it) }
         val localAlertsById = db.alertDao().getAllAlerts().associateBy { it.id }
         val alertEntities = remoteAlerts.mapNotNull { dto ->
@@ -434,6 +571,7 @@ class TransactionRepository(
                 id = dto.id,
                 rawNotification = dto.rawNotification,
                 sourcePackage = dto.sourcePackage,
+                sourceEventId = dto.sourceEventId ?: local?.sourceEventId,
                 riskScore = dto.riskScore,
                 reason = dto.reason,
                 phishingCues = dto.phishingCues ?: "",
@@ -447,20 +585,21 @@ class TransactionRepository(
         // 4. Run local database deduplication to clean up any duplicate items
         deduplicateLocalRecords()
 
-        preferencesManager.setLastSyncTime(System.currentTimeMillis())
+        preferencesManager.setLastSyncTime(System.currentTimeMillis(), profileId)
     }
 
     suspend fun deduplicateLocalRecords() {
+        requireActiveProfile()
         val allTxs = db.transactionDao().getAllTransactions()
         val toDelete = mutableListOf<String>()
         val seen = mutableMapOf<String, TransactionEntity>()
 
         for (tx in allTxs) {
             val timeBucket = tx.timestamp / 300000L
-            // Include the source notification content so two distinct same-amount
-            // purchases in one window never collapse into one record.
-            val rawHash = tx.rawNotification.hashCode()
-            val key = "${tx.amount}|${tx.currency}|${tx.merchant.trim().lowercase()}|${tx.type}|$timeBucket|$rawHash"
+            val key = tx.sourceEventId?.let { "source:$it" } ?: run {
+                val rawHash = tx.rawNotification.hashCode()
+                "content:${tx.amount}|${tx.currency}|${tx.merchant.trim().lowercase()}|${tx.type}|$timeBucket|$rawHash"
+            }
             val existing = seen[key]
             if (existing != null) {
                 if (existing.isSynced && !tx.isSynced) {
@@ -514,25 +653,27 @@ class TransactionRepository(
     }
 
     suspend fun dismissAlert(alertId: String): Result<Boolean> {
+        requireActiveProfile()
         db.alertDao().dismissAlert(alertId)
-        val token = authManager.getAuthToken() ?: return Result.success(false)
-        return apiClient.dismissAlert(alertId, token)
+        val token = cloudTokenOrNull() ?: return Result.success(false)
+        return cloudCall { apiClient.dismissAlert(alertId, token) }
     }
 
     suspend fun autoDismissExpiredThreats(): Int {
+        requireActiveProfile()
         val hours = preferencesManager.autoDismissThreatHours.value
         if (hours <= 0) return 0
         val cutoff = System.currentTimeMillis() - (hours.toLong() * 3600_000L)
         val dismissed = db.alertDao().autoDismissOlderThan(cutoff)
         // Push expirations to the server so dismissals survive re-syncs.
         if (dismissed > 0 && authManager.isSignedIn()) {
-            val token = authManager.getAuthToken()
+            val token = cloudTokenOrNull()
             if (token != null) {
                 val expired = db.alertDao().getAllAlerts()
                     .filter { it.isDismissed && it.timestamp < cutoff }
                     .take(50)
                 for (alert in expired) {
-                    runCatching { apiClient.dismissAlert(alert.id, token) }
+                    cloudCall { apiClient.dismissAlert(alert.id, token) }.getOrThrow()
                 }
             }
         }

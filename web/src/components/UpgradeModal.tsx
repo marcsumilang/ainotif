@@ -81,7 +81,7 @@ export function UpgradeModal({
               </span>
             </div>
             <p className="text-xs text-[#868685]">
-              {reason || "Unlock unlimited AI financial analytics and threat detection"}
+              {reason || "Unlock full notification history, exports, and threat detection"}
             </p>
           </div>
         </div>

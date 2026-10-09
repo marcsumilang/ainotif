@@ -1,8 +1,9 @@
 import { drizzle, type NeonHttpDatabase } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
 import * as schema from "./schema";
-import { eq, desc, and, gte, lte } from "drizzle-orm";
-import { buildJevRequest, isSensitiveOtp, type ClassificationResult, type NotificationPayload } from "../../../backend/src/ai/classifier";
+import { eq, desc, and, gte, lte, lt, or } from "drizzle-orm";
+import crypto from "crypto";
+import { buildJevRequest, OPENROUTER_MODEL, isSensitiveOtp, type ClassificationResult, type NotificationPayload } from "../../../backend/src/ai/classifier";
 
 type DrizzleDb = NeonHttpDatabase<typeof schema>;
 let cachedDb: DrizzleDb | null = null;
@@ -51,6 +52,7 @@ const seedTransactions: schema.Transaction[] = [
     type: "DEBIT",
     rawNotification: "Chase Mobile: You spent $142.50 at Whole Foods Market on card ending in 8832.",
     sourcePackage: "com.chase.sig.android",
+    sourceEventId: null,
     timestamp: new Date(now - 2 * hour),
     createdAt: new Date(now - 2 * hour),
   },
@@ -64,6 +66,7 @@ const seedTransactions: schema.Transaction[] = [
     type: "CREDIT",
     rawNotification: "Bank of America Alert: Direct Deposit of $3,450.00 from TECHCORP GLOBAL INC has arrived.",
     sourcePackage: "com.infonow.bofa",
+    sourceEventId: null,
     timestamp: new Date(now - 14 * hour),
     createdAt: new Date(now - 14 * hour),
   },
@@ -77,6 +80,7 @@ const seedTransactions: schema.Transaction[] = [
     type: "DEBIT",
     rawNotification: "Citi Alerts: A charge of $18.75 at Blue Bottle Coffee was authorized.",
     sourcePackage: "com.citibank.mobile.citibankmobile",
+    sourceEventId: null,
     timestamp: new Date(now - 28 * hour),
     createdAt: new Date(now - 28 * hour),
   },
@@ -90,6 +94,7 @@ const seedTransactions: schema.Transaction[] = [
     type: "DEBIT",
     rawNotification: "Chase Pay: $79.99 paid to Amazon.com digital services.",
     sourcePackage: "com.chase.sig.android",
+    sourceEventId: null,
     timestamp: new Date(now - 2 * day),
     createdAt: new Date(now - 2 * day),
   },
@@ -103,6 +108,7 @@ const seedTransactions: schema.Transaction[] = [
     type: "DEBIT",
     rawNotification: "Wells Fargo: Scheduled automatic payment of $120.00 to PG&E was completed.",
     sourcePackage: "com.wf.wellsfargomobile",
+    sourceEventId: null,
     timestamp: new Date(now - 3 * day),
     createdAt: new Date(now - 3 * day),
   },
@@ -116,6 +122,7 @@ const seedTransactions: schema.Transaction[] = [
     type: "TRANSFER",
     rawNotification: "Revolut: Successfully transferred $500.00 to High Yield Savings Vault.",
     sourcePackage: "com.revolut.revolut",
+    sourceEventId: null,
     timestamp: new Date(now - 4 * day),
     createdAt: new Date(now - 4 * day),
   },
@@ -127,6 +134,7 @@ const seedAlerts: schema.SuspiciousAlert[] = [
     userId: "user_demo_dev",
     rawNotification: "SMS: WELLS-FARGO ALERT: Your online banking access is temporarily suspended due to suspicious activity. Verify identity immediately: https://bit.ly/wf-auth-sec",
     sourcePackage: "com.google.android.apps.messaging",
+    sourceEventId: null,
     riskScore: 94,
     reason: "Urgent account suspension threat with unverified shortlink and bank impersonation",
     phishingCues: JSON.stringify([
@@ -144,6 +152,7 @@ const seedAlerts: schema.SuspiciousAlert[] = [
     userId: "user_demo_dev",
     rawNotification: "SMS: USPS Tracking: Your package cannot be delivered due to an incomplete house number. Pay $1.99 redelivery fee at usps-redelivery-portal.top/track within 12h.",
     sourcePackage: "com.google.android.apps.messaging",
+    sourceEventId: null,
     riskScore: 88,
     reason: "Postal smishing attack with fraudulent domain and credit card fee lure",
     phishingCues: JSON.stringify([
@@ -161,6 +170,7 @@ const seedAlerts: schema.SuspiciousAlert[] = [
     userId: "user_demo_dev",
     rawNotification: "SMS: IRS Alert: Final tax deficit notice. Legal enforcement initiated. Call 800-555-0199 now to prevent warrant issuance.",
     sourcePackage: "com.google.android.apps.messaging",
+    sourceEventId: null,
     riskScore: 92,
     reason: "Government agency tax impersonation with aggressive intimidation tactics",
     phishingCues: JSON.stringify([
@@ -287,6 +297,7 @@ export async function saveTransaction(data: {
   type: string;
   rawNotification: string;
   sourcePackage?: string;
+  sourceEventId?: string;
   timestamp: Date;
 }): Promise<schema.Transaction> {
   await ensureUser(data.userId);
@@ -304,24 +315,32 @@ export async function saveTransaction(data: {
           return existingById;
         }
       }
+      if (data.sourceEventId) {
+        const existingBySourceEvent = await drizzleDb.query.transactions.findFirst({
+          where: and(eq(schema.transactions.userId, data.userId), eq(schema.transactions.sourceEventId, data.sourceEventId)),
+        });
+        if (existingBySourceEvent) return existingBySourceEvent;
+      }
 
-      // 2. Check for duplicate by content & timestamp within 5 minutes
-      const fiveMinBefore = new Date(data.timestamp.getTime() - 300000);
-      const fiveMinAfter = new Date(data.timestamp.getTime() + 300000);
-
-      const existingMatch = await drizzleDb.query.transactions.findFirst({
-        where: and(
-          eq(schema.transactions.userId, data.userId),
-          eq(schema.transactions.merchant, data.merchant),
-          eq(schema.transactions.amount, data.amount),
-          eq(schema.transactions.currency, data.currency),
-          eq(schema.transactions.type, data.type),
-          eq(schema.transactions.rawNotification, data.rawNotification),
-          gte(schema.transactions.timestamp, fiveMinBefore),
-          lte(schema.transactions.timestamp, fiveMinAfter)
-        ),
-      });
-      if (existingMatch) return existingMatch;
+      // Source IDs identify retries. Text and time are not unique: two real
+      // purchases can produce identical notifications a few minutes apart.
+      if (!data.sourceEventId) {
+        const fiveMinBefore = new Date(data.timestamp.getTime() - 300000);
+        const fiveMinAfter = new Date(data.timestamp.getTime() + 300000);
+        const existingMatch = await drizzleDb.query.transactions.findFirst({
+          where: and(
+            eq(schema.transactions.userId, data.userId),
+            eq(schema.transactions.merchant, data.merchant),
+            eq(schema.transactions.amount, data.amount),
+            eq(schema.transactions.currency, data.currency),
+            eq(schema.transactions.type, data.type),
+            eq(schema.transactions.rawNotification, data.rawNotification),
+            gte(schema.transactions.timestamp, fiveMinBefore),
+            lte(schema.transactions.timestamp, fiveMinAfter)
+          ),
+        });
+        if (existingMatch) return existingMatch;
+      }
 
       const [inserted] = await drizzleDb
         .insert(schema.transactions)
@@ -335,10 +354,24 @@ export async function saveTransaction(data: {
           type: data.type,
           rawNotification: data.rawNotification,
           sourcePackage: data.sourcePackage,
+          sourceEventId: data.sourceEventId,
           timestamp: data.timestamp,
         })
+        .onConflictDoNothing()
         .returning();
-      return inserted;
+      if (inserted) return inserted;
+      if (data.sourceEventId) {
+        const racedBySourceEvent = await drizzleDb.query.transactions.findFirst({
+          where: and(eq(schema.transactions.userId, data.userId), eq(schema.transactions.sourceEventId, data.sourceEventId)),
+        });
+        if (racedBySourceEvent) return racedBySourceEvent;
+      }
+      if (data.id) {
+        const raced = await drizzleDb.query.transactions.findFirst({ where: eq(schema.transactions.id, data.id) });
+        if (raced?.userId === data.userId) return raced;
+        if (raced) throw new TransactionIdConflictError();
+      }
+      throw new Error("Transaction insert did not return a record");
     } catch (err) {
       if (err instanceof TransactionIdConflictError) throw err;
       console.warn("DB insert failed, saving to memory:", err);
@@ -353,7 +386,11 @@ export async function saveTransaction(data: {
       return existing;
     }
   }
-  const existing = memoryStore.transactions.find((t) =>
+  if (data.sourceEventId) {
+    const existingBySourceEvent = memoryStore.transactions.find((t) => t.userId === data.userId && t.sourceEventId === data.sourceEventId);
+    if (existingBySourceEvent) return existingBySourceEvent;
+  }
+  const existing = data.sourceEventId ? undefined : memoryStore.transactions.find((t) =>
     t.userId === data.userId &&
     t.merchant.toLowerCase() === data.merchant.toLowerCase() &&
     t.rawNotification === data.rawNotification &&
@@ -365,7 +402,7 @@ export async function saveTransaction(data: {
   if (existing) return existing;
 
   const item: schema.Transaction = {
-    id: data.id || `tx-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+    id: data.id || crypto.randomUUID(),
     userId: data.userId,
     amount: data.amount,
     currency: data.currency,
@@ -374,6 +411,7 @@ export async function saveTransaction(data: {
     type: data.type,
     rawNotification: data.rawNotification,
     sourcePackage: data.sourcePackage || null,
+    sourceEventId: data.sourceEventId ?? null,
     timestamp: data.timestamp,
     createdAt: new Date(),
   };
@@ -381,15 +419,26 @@ export async function saveTransaction(data: {
   return item;
 }
 
-export async function getTransactions(userId: string, limit = 100): Promise<schema.Transaction[]> {
+export async function getTransactions(
+  userId: string,
+  limit = 100,
+  before?: { timestamp: Date; id: string }
+): Promise<schema.Transaction[]> {
   const drizzleDb = getDb();
   if (drizzleDb) {
     try {
+      const conditions = [eq(schema.transactions.userId, userId)];
+      if (before) {
+        conditions.push(or(
+          lt(schema.transactions.timestamp, before.timestamp),
+          and(eq(schema.transactions.timestamp, before.timestamp), lt(schema.transactions.id, before.id))
+        )!);
+      }
       const res = await drizzleDb
         .select()
         .from(schema.transactions)
-        .where(eq(schema.transactions.userId, userId))
-        .orderBy(desc(schema.transactions.timestamp))
+        .where(and(...conditions))
+        .orderBy(desc(schema.transactions.timestamp), desc(schema.transactions.id))
         .limit(limit);
       if (res.length > 0) return res;
     } catch (err) {
@@ -399,6 +448,8 @@ export async function getTransactions(userId: string, limit = 100): Promise<sche
 
   return memoryStore.transactions
     .filter((t) => t.userId === userId)
+    .filter((t) => !before || t.timestamp < before.timestamp || (t.timestamp.getTime() === before.timestamp.getTime() && t.id < before.id))
+    .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime() || b.id.localeCompare(a.id))
     .slice(0, limit);
 }
 
@@ -493,9 +544,11 @@ export async function bulkUpdateCategory(userId: string, ids: string[], category
 }
 
 export async function saveAlert(data: {
+  id?: string;
   userId: string;
   rawNotification: string;
   sourcePackage?: string;
+  sourceEventId?: string;
   riskScore: number;
   reason: string;
   phishingCues: string[];
@@ -506,39 +559,80 @@ export async function saveAlert(data: {
   const drizzleDb = getDb();
   if (drizzleDb) {
     try {
-      const fiveMinBefore = new Date(data.timestamp.getTime() - 300000);
-      const fiveMinAfter = new Date(data.timestamp.getTime() + 300000);
-
-      const existingMatch = await drizzleDb.query.suspiciousAlerts.findFirst({
-        where: and(
-          eq(schema.suspiciousAlerts.userId, data.userId),
-          eq(schema.suspiciousAlerts.rawNotification, data.rawNotification),
-          gte(schema.suspiciousAlerts.timestamp, fiveMinBefore),
-          lte(schema.suspiciousAlerts.timestamp, fiveMinAfter)
-        ),
-      });
-      if (existingMatch) return existingMatch;
+      if (data.id) {
+        const existingById = await drizzleDb.query.suspiciousAlerts.findFirst({
+          where: eq(schema.suspiciousAlerts.id, data.id),
+        });
+        if (existingById) {
+          if (existingById.userId !== data.userId) throw new TransactionIdConflictError();
+          return existingById;
+        }
+      }
+      if (data.sourceEventId) {
+        const existingBySourceEvent = await drizzleDb.query.suspiciousAlerts.findFirst({
+          where: and(eq(schema.suspiciousAlerts.userId, data.userId), eq(schema.suspiciousAlerts.sourceEventId, data.sourceEventId)),
+        });
+        if (existingBySourceEvent) return existingBySourceEvent;
+      }
+      if (!data.sourceEventId) {
+        const fiveMinBefore = new Date(data.timestamp.getTime() - 300000);
+        const fiveMinAfter = new Date(data.timestamp.getTime() + 300000);
+        const existingMatch = await drizzleDb.query.suspiciousAlerts.findFirst({
+          where: and(
+            eq(schema.suspiciousAlerts.userId, data.userId),
+            eq(schema.suspiciousAlerts.rawNotification, data.rawNotification),
+            gte(schema.suspiciousAlerts.timestamp, fiveMinBefore),
+            lte(schema.suspiciousAlerts.timestamp, fiveMinAfter)
+          ),
+        });
+        if (existingMatch) return existingMatch;
+      }
 
       const [inserted] = await drizzleDb
         .insert(schema.suspiciousAlerts)
         .values({
+          ...(data.id ? { id: data.id } : {}),
           userId: data.userId,
           rawNotification: data.rawNotification,
           sourcePackage: data.sourcePackage,
+          sourceEventId: data.sourceEventId,
           riskScore: data.riskScore,
           reason: data.reason,
           phishingCues: JSON.stringify(data.phishingCues),
           timestamp: data.timestamp,
           isDismissed: false,
         })
+        .onConflictDoNothing()
         .returning();
-      return inserted;
+      if (inserted) return inserted;
+      if (data.sourceEventId) {
+        const racedBySourceEvent = await drizzleDb.query.suspiciousAlerts.findFirst({
+          where: and(eq(schema.suspiciousAlerts.userId, data.userId), eq(schema.suspiciousAlerts.sourceEventId, data.sourceEventId)),
+        });
+        if (racedBySourceEvent) return racedBySourceEvent;
+      }
+      if (data.id) {
+        const raced = await drizzleDb.query.suspiciousAlerts.findFirst({ where: eq(schema.suspiciousAlerts.id, data.id) });
+        if (raced?.userId === data.userId) return raced;
+        if (raced) throw new TransactionIdConflictError();
+      }
+      throw new Error("Alert insert did not return a record");
     } catch (err) {
+      if (err instanceof TransactionIdConflictError) throw err;
       console.warn("DB alert insert failed, saving to memory:", err);
     }
   }
 
-  const existing = memoryStore.alerts.find((a) =>
+  const existingById = data.id ? memoryStore.alerts.find((a) => a.id === data.id) : undefined;
+  if (existingById) {
+    if (existingById.userId !== data.userId) throw new TransactionIdConflictError();
+    return existingById;
+  }
+  if (data.sourceEventId) {
+    const existingBySourceEvent = memoryStore.alerts.find((a) => a.userId === data.userId && a.sourceEventId === data.sourceEventId);
+    if (existingBySourceEvent) return existingBySourceEvent;
+  }
+  const existing = data.sourceEventId ? undefined : memoryStore.alerts.find((a) =>
     a.userId === data.userId &&
     a.rawNotification === data.rawNotification &&
     Math.abs(a.timestamp.getTime() - data.timestamp.getTime()) <= 300000
@@ -546,10 +640,11 @@ export async function saveAlert(data: {
   if (existing) return existing;
 
   const item: schema.SuspiciousAlert = {
-    id: `alert-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+    id: data.id || `alert-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
     userId: data.userId,
     rawNotification: data.rawNotification,
     sourcePackage: data.sourcePackage || null,
+    sourceEventId: data.sourceEventId ?? null,
     riskScore: data.riskScore,
     reason: data.reason,
     phishingCues: JSON.stringify(data.phishingCues),
@@ -695,24 +790,64 @@ export async function deleteUserData(userId: string): Promise<{ deletedTransacti
   return { deletedTransactions, deletedAlerts, success: true };
 }
 
-export async function saveNotificationAnalysis(userId: string, payload: NotificationPayload, analysis: ClassificationResult): Promise<string | null> {
+export async function saveNotificationAnalysis(userId: string, payload: NotificationPayload, analysis: ClassificationResult): Promise<{ id: string | null; created: boolean }> {
   const rawNotification = `${payload.title ? payload.title + " : " : ""}${payload.text}`;
-  if (analysis.droppedOtp || isSensitiveOtp(rawNotification)) return null;
+  if (analysis.droppedOtp || isSensitiveOtp(rawNotification)) return { id: null, created: false };
+  const existing = payload.sourceEventId
+    ? await getNotificationAnalysisBySourceEventId(userId, payload.sourceEventId)
+    : null;
+  if (existing) return { id: existing.id, created: false };
   await ensureUser(userId);
-  const context = buildJevRequest(payload, analysis.diagnostics.model ?? "jev-latest").state;
+  const context = buildJevRequest(payload, analysis.diagnostics.model ?? OPENROUTER_MODEL).state;
   const item = {
     userId, rawNotification, sourcePackage: payload.packageName ?? null,
+    sourceEventId: payload.sourceEventId ?? null, savedRecordId: null, savedRecordType: null,
     timestamp: new Date(payload.timestamp ?? Date.now()), requiresReview: analysis.decision.requiresReview,
     analysis, context,
   };
   const db = getDb();
   if (db) {
-    const [saved] = await db.insert(schema.notificationAnalyses).values(item).returning();
-    return saved.id;
+    const inserted = await db.insert(schema.notificationAnalyses).values(item)
+      .onConflictDoNothing({ target: [schema.notificationAnalyses.userId, schema.notificationAnalyses.sourceEventId] })
+      .returning({ id: schema.notificationAnalyses.id });
+    if (inserted[0]) return { id: inserted[0].id, created: true };
+    if (payload.sourceEventId) {
+      return { id: (await getNotificationAnalysisBySourceEventId(userId, payload.sourceEventId))?.id ?? null, created: false };
+    }
+    return { id: null, created: false };
+  }
+  if (payload.sourceEventId) {
+    const raced = memoryStore.analyses.find((entry) => entry.userId === userId && entry.sourceEventId === payload.sourceEventId);
+    if (raced) return { id: raced.id, created: false };
   }
   const saved = { ...item, id: crypto.randomUUID(), createdAt: new Date() };
   memoryStore.analyses.unshift(saved);
-  return saved.id;
+  return { id: saved.id, created: true };
+}
+
+export async function getNotificationAnalysisBySourceEventId(userId: string, sourceEventId: string): Promise<schema.NotificationAnalysis | null> {
+  const db = getDb();
+  if (db) {
+    return (await db.query.notificationAnalyses.findFirst({
+      where: and(eq(schema.notificationAnalyses.userId, userId), eq(schema.notificationAnalyses.sourceEventId, sourceEventId)),
+    })) ?? null;
+  }
+  return memoryStore.analyses.find((entry) => entry.userId === userId && entry.sourceEventId === sourceEventId) ?? null;
+}
+
+export async function linkNotificationAnalysisRecord(userId: string, analysisId: string, savedRecordId: string, savedRecordType: "transaction" | "alert"): Promise<void> {
+  const db = getDb();
+  if (db) {
+    await db.update(schema.notificationAnalyses)
+      .set({ savedRecordId, savedRecordType })
+      .where(and(eq(schema.notificationAnalyses.userId, userId), eq(schema.notificationAnalyses.id, analysisId)));
+    return;
+  }
+  const record = memoryStore.analyses.find((entry) => entry.userId === userId && entry.id === analysisId);
+  if (record) {
+    record.savedRecordId = savedRecordId;
+    record.savedRecordType = savedRecordType;
+  }
 }
 
 export async function getNotificationReviews(userId: string): Promise<schema.NotificationAnalysis[]> {
@@ -721,4 +856,38 @@ export async function getNotificationReviews(userId: string): Promise<schema.Not
     .where(and(eq(schema.notificationAnalyses.userId, userId), eq(schema.notificationAnalyses.requiresReview, true)))
     .orderBy(desc(schema.notificationAnalyses.createdAt)).limit(50);
   return memoryStore.analyses.filter((item) => item.userId === userId && item.requiresReview).slice(0, 50);
+}
+
+export type NotificationHistoryItem = Pick<schema.NotificationAnalysis,
+  "id" | "rawNotification" | "sourcePackage" | "timestamp" | "requiresReview" | "analysis" | "createdAt">;
+
+export async function getNotificationHistory(
+  userId: string,
+  limit = 50,
+  before?: { createdAt: Date; id: string }
+): Promise<NotificationHistoryItem[]> {
+  const db = getDb();
+  if (db) {
+    const cursorFilter = before ? or(
+      lt(schema.notificationAnalyses.createdAt, before.createdAt),
+      and(eq(schema.notificationAnalyses.createdAt, before.createdAt), lt(schema.notificationAnalyses.id, before.id))
+    ) : undefined;
+    return db.select({
+      id: schema.notificationAnalyses.id,
+      rawNotification: schema.notificationAnalyses.rawNotification,
+      sourcePackage: schema.notificationAnalyses.sourcePackage,
+      timestamp: schema.notificationAnalyses.timestamp,
+      requiresReview: schema.notificationAnalyses.requiresReview,
+      analysis: schema.notificationAnalyses.analysis,
+      createdAt: schema.notificationAnalyses.createdAt,
+    }).from(schema.notificationAnalyses)
+      .where(and(eq(schema.notificationAnalyses.userId, userId), cursorFilter))
+      .orderBy(desc(schema.notificationAnalyses.createdAt), desc(schema.notificationAnalyses.id))
+      .limit(limit);
+  }
+  return memoryStore.analyses
+    .filter((entry) => entry.userId === userId && (!before || entry.createdAt < before.createdAt || (entry.createdAt.getTime() === before.createdAt.getTime() && entry.id < before.id)))
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id))
+    .slice(0, limit)
+    .map(({ id, rawNotification, sourcePackage, timestamp, requiresReview, analysis, createdAt }) => ({ id, rawNotification, sourcePackage, timestamp, requiresReview, analysis, createdAt }));
 }

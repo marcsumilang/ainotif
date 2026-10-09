@@ -10,11 +10,13 @@ import com.ainotif.data.repository.ProcessNotificationOutcome
 import com.ainotif.data.repository.TransactionRepository
 import com.ainotif.service.FilterDecision
 import com.ainotif.service.RegexFilter
+import com.ainotif.util.SourceEventIds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 data class SmsImportSummary(
     val totalScanned: Int = 0,
+    val totalAvailable: Int = totalScanned,
     val transactionsImported: Int = 0,
     val alertsIntercepted: Int = 0,
     val otpsDropped: Int = 0,
@@ -23,6 +25,7 @@ data class SmsImportSummary(
     val processingErrors: Int = 0,
     val ignoredCount: Int = 0,
     val onDeviceReviewOnly: Boolean = false,
+    val stoppedEarly: Boolean = false,
     val processingErrorMessage: String? = null
 )
 
@@ -107,6 +110,7 @@ object SmsInboxImporter {
                 val addressCol = c.getColumnIndex(Telephony.Sms.ADDRESS)
                 val bodyCol = c.getColumnIndex(Telephony.Sms.BODY)
                 val dateCol = c.getColumnIndex(Telephony.Sms.DATE)
+                val idCol = c.getColumnIndex(Telephony.Sms._ID)
 
                 var current = 0
                 var txCount = 0
@@ -117,6 +121,7 @@ object SmsInboxImporter {
                 var errorCount = 0
                 var ignoredCount = 0
                 var firstErrorMessage: String? = null
+                var stoppedEarly = false
 
                 // Report initial progress on the main thread (Compose state).
                 withContext(Dispatchers.Main) {
@@ -125,9 +130,12 @@ object SmsInboxImporter {
 
                 while (c.moveToNext()) {
                     current++
+                    var stopAfterCurrent = false
                     val address = if (addressCol >= 0) c.getString(addressCol) ?: "SMS" else "SMS"
                     val body = if (bodyCol >= 0) c.getString(bodyCol).orEmpty() else ""
                     val date = if (dateCol >= 0) c.getLong(dateCol) else System.currentTimeMillis()
+                    val providerId = if (idCol >= 0) c.getString(idCol) ?: "$address|$date|$body" else "$address|$date|$body"
+                    val sourceEventId = SourceEventIds.sms(context, providerId)
 
                     if (body.isBlank()) {
                         ignoredCount++
@@ -145,7 +153,7 @@ object SmsInboxImporter {
                         }
                         is FilterDecision.ForwardForAi -> {
                             val rawText = "$address: $body".trim()
-                            if (repository.hasSimilarRecord(rawText, date)) {
+                            if (repository.hasSimilarRecord(rawText, date, sourceEventId = sourceEventId)) {
                                 dupCount++
                             } else {
                                 val outcome = repository.processHistoricalMessage(
@@ -153,17 +161,28 @@ object SmsInboxImporter {
                                     text = body,
                                     packageName = "com.google.android.apps.messaging",
                                     timestamp = date,
-                                    forceLocal = forceLocal
+                                    forceLocal = forceLocal,
+                                    sourceEventId = sourceEventId
                                 )
 
                                 when (outcome) {
                                     is ProcessNotificationOutcome.ParsedTransaction -> txCount++
-                                    is ProcessNotificationOutcome.InterceptedScam -> alertCount++
+                                    is ProcessNotificationOutcome.InterceptedScam -> {
+                                        alertCount++
+                                        outcome.classificationError?.let { message ->
+                                            errorCount++
+                                            if (firstErrorMessage == null) firstErrorMessage = message
+                                            stopAfterCurrent = true
+                                        }
+                                    }
                                     is ProcessNotificationOutcome.DroppedSecurityCode -> otpCount++
                                     is ProcessNotificationOutcome.ReviewRequired -> reviewCount++
+                                    ProcessNotificationOutcome.Archived -> ignoredCount++
                                     is ProcessNotificationOutcome.Error -> {
                                         errorCount++
                                         if (firstErrorMessage == null) firstErrorMessage = outcome.message
+                                        if (outcome.fallbackReviewRequired) reviewCount++
+                                        stopAfterCurrent = outcome.stopImport
                                     }
                                     ProcessNotificationOutcome.Ignored -> ignoredCount++
                                 }
@@ -172,7 +191,7 @@ object SmsInboxImporter {
                     }
 
                     // Update UI progress every 5 messages or on the last message (main thread).
-                    if (current % 5 == 0 || current == total) {
+                    if (stopAfterCurrent || current % 5 == 0 || current == total) {
                         val snapshot = SmsProgress(
                             current = current,
                             total = total,
@@ -188,17 +207,22 @@ object SmsInboxImporter {
                             onProgress?.invoke(snapshot)
                         }
                     }
+                    if (stopAfterCurrent) {
+                        stoppedEarly = current < total
+                        break
+                    }
                 }
 
                 repository.deduplicateLocalRecords()
 
                 Log.i(
                     TAG,
-                    "SMS Import completed: $total scanned, $txCount transactions, $alertCount alerts, $reviewCount need review, $otpCount OTPs dropped, $dupCount duplicates skipped, $errorCount errors."
+                    "SMS Import completed: $current of $total scanned, $txCount transactions, $alertCount alerts, $reviewCount need review, $otpCount OTPs dropped, $dupCount duplicates skipped, $errorCount errors."
                 )
 
                 SmsImportSummary(
-                    totalScanned = total,
+                    totalScanned = current,
+                    totalAvailable = total,
                     transactionsImported = txCount,
                     alertsIntercepted = alertCount,
                     otpsDropped = otpCount,
@@ -207,6 +231,7 @@ object SmsInboxImporter {
                     processingErrors = errorCount,
                     ignoredCount = ignoredCount,
                     onDeviceReviewOnly = forceLocal,
+                    stoppedEarly = stoppedEarly,
                     processingErrorMessage = firstErrorMessage
                 )
             }

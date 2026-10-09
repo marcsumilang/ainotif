@@ -47,6 +47,7 @@ fun FeedScreen(
     val coroutineScope = rememberCoroutineScope()
     val transactions by repository.transactionsFlow.collectAsState(initial = emptyList())
     val baseCurrency by repository.preferencesManager.baseCurrency.collectAsState()
+    val isOfflineOnly by repository.preferencesManager.isOfflineOnly.collectAsState()
 
     var isSyncing by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -145,20 +146,22 @@ fun FeedScreen(
                                 isSyncing = true
                                 val syncState = try {
                                     val activeCount = AiNotificationListenerService.scanActiveNotifications()
-                                    activeCount to repository.syncWithBackend()
+                                    activeCount to if (isOfflineOnly) null else repository.syncWithBackend()
                                 } finally {
                                     isSyncing = false
                                 }
                                 val activeCount = syncState.first
                                 val syncResult = syncState.second
                                 val msg = when {
-                                    syncResult.isSuccess && activeCount > 0 -> "Captured $activeCount active items + synced"
-                                    syncResult.isSuccess -> "Cloud sync complete"
-                                    syncResult.exceptionOrNull() is AuthenticationRequiredException && activeCount > 0 ->
-                                        "Captured $activeCount items locally. Sign in to sync cloud data"
-                                    syncResult.exceptionOrNull() is AuthenticationRequiredException ->
+                                    isOfflineOnly && activeCount > 0 -> "Saved $activeCount active notifications locally; Offline-Only kept cloud unchanged"
+                                    isOfflineOnly -> "Offline-Only mode kept cloud unchanged"
+                                    syncResult?.isSuccess == true && activeCount > 0 -> "Saved $activeCount active notifications + synced cloud data"
+                                    syncResult?.isSuccess == true -> "Cloud sync complete"
+                                    syncResult?.exceptionOrNull() is AuthenticationRequiredException && activeCount > 0 ->
+                                        "Saved $activeCount active notifications locally. Sign in to sync cloud data"
+                                    syncResult?.exceptionOrNull() is AuthenticationRequiredException ->
                                         "Sign in to sync cloud data"
-                                    else -> "Sync failed: ${syncResult.exceptionOrNull()?.message ?: "Unknown error"}"
+                                    else -> "Sync failed: ${syncResult?.exceptionOrNull()?.message ?: "Unknown error"}"
                                 }
                                 Toast.makeText(context, msg.take(140), Toast.LENGTH_LONG).show()
                             }
@@ -167,7 +170,10 @@ fun FeedScreen(
                         if (isSyncing) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                         } else {
-                            Icon(Icons.Default.Refresh, contentDescription = "Sync with Backend")
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = if (isOfflineOnly) "Capture active notifications locally" else "Sync with Backend"
+                            )
                         }
                     }
                 }

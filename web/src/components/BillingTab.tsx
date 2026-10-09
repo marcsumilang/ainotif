@@ -86,8 +86,8 @@ export function BillingTab({
                 </div>
                 <p className="text-xs text-[#868685]">
                   {isPro
-                    ? "Full enterprise-grade financial intelligence, unlimited AI classifications, and threat radar active."
-                    : "Basic protection active. Upgrade to Pro for unlimited notifications, full history, and CSV export."}
+                    ? "Full notification history, exports, and threat radar are active. AI classification depends on OpenRouter's free-model availability."
+                    : "Basic protection active. Upgrade to Pro for full history and CSV export; AI classification depends on OpenRouter's free-model availability."}
                 </p>
               </div>
             </div>
@@ -98,7 +98,7 @@ export function BillingTab({
             <div className="flex items-center justify-between text-xs mb-1.5 font-bold text-[#163300]">
               <span>Monthly AI Usage</span>
               <span>
-                {isPro ? `${notificationCount} processed (Unlimited)` : `${notificationCount} / ${freeLimit}`}
+                {isPro ? `${notificationCount} processed` : `${notificationCount} / ${freeLimit}`}
               </span>
             </div>
             <div className="w-full h-2.5 bg-[#e8ebe6] rounded-full overflow-hidden">
@@ -344,7 +344,7 @@ export function BillingTab({
           <div className="bg-[#f7f9f6] p-4 rounded-2xl border border-[#e8ebe6]">
             <h4 className="font-bold text-[#163300] mb-1">What happens if I hit the 20 notification limit?</h4>
             <p className="text-[#868685] leading-relaxed">
-              On the Free tier, new notifications after 20 will pause until the next billing month or until you upgrade to Pro for unlimited processing.
+              On the Free tier, notifications after 20 will pause until the next billing month or until you upgrade to Pro. The app limit does not change OpenRouter's free-model availability or rate limits.
             </p>
           </div>
           <div className="bg-[#f7f9f6] p-4 rounded-2xl border border-[#e8ebe6]">

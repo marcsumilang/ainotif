@@ -15,11 +15,15 @@ import com.ainotif.data.remote.AiNotifApiClient
 import com.ainotif.data.repository.TransactionRepository
 import com.ainotif.service.AppFilterManager
 import com.clerk.api.Clerk
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 
 class AiNotifApplication : Application() {
 
-    lateinit var database: AppDatabase
-        private set
+    val database: AppDatabase get() = currentDataSession().database
 
     lateinit var apiClient: AiNotifApiClient
         private set
@@ -33,11 +37,42 @@ class AiNotifApplication : Application() {
     lateinit var appFilterManager: AppFilterManager
         private set
 
-    lateinit var categoryRulesManager: CategoryRulesManager
-        private set
+    val categoryRulesManager: CategoryRulesManager get() = currentDataSession().rules
 
-    lateinit var repository: TransactionRepository
-        private set
+    val repository: TransactionRepository get() = currentDataSession().repository
+
+    private data class DataSession(
+        val authState: ClerkAuthManager.UserState,
+        val database: AppDatabase,
+        val rules: CategoryRulesManager,
+        val repository: TransactionRepository
+    )
+
+    private var dataSession: DataSession? = null
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    @Synchronized
+    private fun currentDataSession(): DataSession {
+        val state = authManager.userState.value
+        dataSession?.takeIf { it.authState === state }?.let { return it }
+        // Legacy records stay in the signed-out local profile. Demo has its own
+        // namespace and can never become an authenticated owner's pending queue.
+        val profileId = when (state) {
+            is ClerkAuthManager.UserState.SignedIn -> state.userId
+            is ClerkAuthManager.UserState.DemoUser -> "local-demo:${state.userId}"
+            ClerkAuthManager.UserState.SignedOut -> null
+        }
+        if (dataSession != null) {
+            // Posted warnings may contain the previous owner's financial text.
+            (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancelAll()
+        }
+        val db = AppDatabase.getDatabase(this, profileId)
+        val rules = CategoryRulesManager(this, profileId)
+        preferencesManager.activateProfile(profileId)
+        return DataSession(state, db, rules, TransactionRepository(
+            db, apiClient, authManager, preferencesManager, rules, state, profileId
+        )).also { dataSession = it }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -49,22 +84,22 @@ class AiNotifApplication : Application() {
             Log.e("AiNotifApplication", "CLERK_PUBLISHABLE_KEY is not configured; cloud sign-in is unavailable.")
         }
 
-        database = AppDatabase.getDatabase(this)
         preferencesManager = UserPreferencesManager(this)
         appFilterManager = AppFilterManager(this)
-        categoryRulesManager = CategoryRulesManager(this)
 
         val activeBackendUrl = preferencesManager.backendUrl.value
         apiClient = AiNotifApiClient(baseUrl = activeBackendUrl)
-        authManager = ClerkAuthManager(this)
+        authManager = ClerkAuthManager(this) { token ->
+            if (preferencesManager.isOfflineOnly.value) {
+                throw IllegalStateException("Legacy token pairing needs online session verification. Use the native sign-in ticket or turn off Offline-Only.")
+            }
+            apiClient.fetchSessionIdentity(token).getOrThrow()
+        }
 
-        repository = TransactionRepository(
-            db = database,
-            apiClient = apiClient,
-            authManager = authManager,
-            preferencesManager = preferencesManager,
-            categoryRulesManager = categoryRulesManager
-        )
+        currentDataSession()
+        applicationScope.launch {
+            authManager.userState.collect { currentDataSession() }
+        }
 
         createNotificationChannels()
     }

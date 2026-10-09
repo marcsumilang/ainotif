@@ -1,5 +1,7 @@
 # Jev notification processing
 
+> Historical rollout record. The active classifier now uses OpenRouter's `openrouter/free` route, and financial suggestions require review. See [notification capture, history, and classification](openrouter-notification-history.md) for the current implementation and tester steps.
+
 Backend and Next API routes share `backend/src/ai/classifier.ts`:
 
 `credential filter → amount/merchant candidates and URL facts → one batched Jev request → runtime validation → action policy → owner-scoped persistence`
@@ -12,7 +14,7 @@ Eight independent judgments cover completed movement, phishing, credential reque
 
 1. Install both server dependency sets from the repository root: `pnpm -C backend install` and `pnpm -C web install`. Web imports the canonical backend module; both directories must be included in build/deployment checkouts.
 2. Set server-only `TYPESAFE_API_KEY` and `TYPESAFE_MODEL` in `backend/.env` and `web/.env.local`. Local web settings have been populated from the existing backend TypeSafe settings. Never use a `NEXT_PUBLIC_` key. For Workers, set `TYPESAFE_API_KEY` with Wrangler secrets in **each** project; the model is a normal Worker variable.
-3. Before using Neon, apply `backend/migrations/0001_notification_analyses.sql` once to the database shared by both servers. This adds a table and index; existing ledger records are unchanged. The migration has not been applied to a live database by this task.
+3. Before using Neon, apply `backend/migrations/0001_notification_analyses.sql` and then `backend/migrations/0002_notification_history_idempotency.sql` once to the database shared by both servers. The second migration adds stable source-event IDs and saved-record links to retained analyses, plus source IDs to transactions and alerts. The migrations have not been applied to a live database by this task.
 4. Install the updated Android app before deploying/enabling the Jev server behavior. Older APKs do not understand the new action policy and can still hide alerts automatically.
 5. Keep `DEV_MOCK_AUTH=false` in both deployed Worker configurations. Mock identities are only enabled by an explicit local setting; missing Clerk secrets no longer switch either API into demo authentication. Set `CLERK_SECRET_KEY` as a server-side secret in both deployments before enabling authenticated traffic.
 

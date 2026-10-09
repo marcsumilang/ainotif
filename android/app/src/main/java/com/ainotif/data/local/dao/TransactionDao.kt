@@ -52,6 +52,15 @@ interface TransactionDao {
     @Query("SELECT EXISTS(SELECT 1 FROM transactions WHERE rawNotification = :rawNotification AND ABS(timestamp - :timestamp) <= :toleranceMs LIMIT 1)")
     suspend fun hasSimilarTransaction(rawNotification: String, timestamp: Long, toleranceMs: Long = 300000L): Boolean
 
+    @Query("SELECT EXISTS(SELECT 1 FROM transactions WHERE sourceEventId = :sourceEventId LIMIT 1)")
+    suspend fun hasSourceEvent(sourceEventId: String): Boolean
+
+    @Query("SELECT * FROM transactions WHERE id = :id LIMIT 1")
+    suspend fun findById(id: String): TransactionEntity?
+
+    @Query("SELECT * FROM transactions WHERE sourceEventId = :sourceEventId LIMIT 1")
+    suspend fun findBySourceEventId(sourceEventId: String): TransactionEntity?
+
     @Query("SELECT EXISTS(SELECT 1 FROM transactions WHERE (rawNotification = :rawNotification OR (ABS(amount - :amount) < 0.001 AND currency = :currency AND LOWER(merchant) = LOWER(:merchant))) AND ABS(timestamp - :timestamp) <= :toleranceMs LIMIT 1)")
     suspend fun hasSimilarTransactionExact(
         rawNotification: String,
@@ -62,7 +71,7 @@ interface TransactionDao {
         toleranceMs: Long = 300000L
     ): Boolean
 
-    @Query("SELECT * FROM transactions WHERE (rawNotification = :rawNotification OR (ABS(amount - :amount) < 0.001 AND currency = :currency AND LOWER(merchant) = LOWER(:merchant))) AND ABS(timestamp - :timestamp) <= :toleranceMs LIMIT 1")
+    @Query("SELECT * FROM transactions WHERE sourceEventId IS NULL AND (rawNotification = :rawNotification OR (ABS(amount - :amount) < 0.001 AND currency = :currency AND LOWER(merchant) = LOWER(:merchant))) AND ABS(timestamp - :timestamp) <= :toleranceMs LIMIT 1")
     suspend fun findMatchingTransaction(
         rawNotification: String,
         amount: Double,

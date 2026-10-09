@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import NotificationReviewQueue from "@/components/NotificationReviewQueue";
+import NotificationHistory from "@/components/NotificationHistory";
 import {
   Shield,
   ShieldAlert,
@@ -217,6 +218,9 @@ export default function Dashboard() {
 
   const [baseCurrency, setBaseCurrency] = useState<string>("USD");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactionCursor, setTransactionCursor] = useState<{ timestamp: string; id: string } | null>(null);
+  const [hasMoreTransactions, setHasMoreTransactions] = useState(false);
+  const [loadingOlderTransactions, setLoadingOlderTransactions] = useState(false);
   const [alerts, setAlerts] = useState<SuspiciousAlert[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -279,6 +283,8 @@ export default function Dashboard() {
       if (txRes.ok) {
         const data = await txRes.json();
         setTransactions(data.transactions || []);
+        setTransactionCursor(data.nextCursor || null);
+        setHasMoreTransactions(Boolean(data.hasMore));
       } else if (txRes.status === 401) {
         failures.push("Sign in to view transactions");
       } else {
@@ -304,6 +310,34 @@ export default function Dashboard() {
       setFetchError("Network error loading dashboard. Check your connection and retry.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadOlderTransactions = async () => {
+    if (!hasMoreTransactions || !transactionCursor || loadingOlderTransactions) return;
+    setLoadingOlderTransactions(true);
+    setFetchError(null);
+    try {
+      const params = new URLSearchParams({
+        limit: "100",
+        beforeTimestamp: transactionCursor.timestamp,
+        beforeId: transactionCursor.id,
+      });
+      const headers: Record<string, string> = {};
+      if (authToken) headers.Authorization = `Bearer ${authToken}`;
+      const response = await fetch(`/api/transactions?${params}`, { headers, cache: "no-store" });
+      if (!response.ok) throw new Error("Older transactions are unavailable.");
+      const data = await response.json();
+      setTransactions((current) => {
+        const ids = new Set(current.map((item) => item.id));
+        return [...current, ...(data.transactions as Transaction[]).filter((item) => !ids.has(item.id))];
+      });
+      setTransactionCursor(data.nextCursor || null);
+      setHasMoreTransactions(Boolean(data.hasMore));
+    } catch (error) {
+      setFetchError(error instanceof Error ? error.message : "Older transactions are unavailable.");
+    } finally {
+      setLoadingOlderTransactions(false);
     }
   };
 
@@ -639,7 +673,7 @@ export default function Dashboard() {
 
   const handleRunSimulator = async () => {
     if (userPlan !== "pro" && notificationCount >= 20) {
-      setUpgradeReason("You have reached the monthly limit of 20 notifications on the Free Plan. Upgrade to Pro Guardian ($10/month) for unlimited AI simulations.");
+      setUpgradeReason("You have reached the monthly limit of 20 notifications on the Free Plan. Upgrade to Pro Guardian ($10/month) for unlimited app-level simulations; AI availability follows OpenRouter's free-model limits.");
       setShowUpgradeModal(true);
       return;
     }
@@ -911,7 +945,7 @@ export default function Dashboard() {
             ) : (
               <button
                 onClick={() => {
-                  setUpgradeReason("Upgrade to Pro Guardian ($10/month) for unlimited AI notifications, unlimited history, and CSV exports.");
+                  setUpgradeReason("Upgrade to Pro Guardian ($10/month) for unlimited notification history and CSV exports. AI availability follows OpenRouter's free-model limits.");
                   setShowUpgradeModal(true);
                 }}
                 className="flex items-center gap-1.5 bg-[#9fe870] hover:bg-[#8ed662] text-[#163300] rounded-full px-3.5 py-1.5 text-xs font-black shadow-sm transition-all active:scale-95 cursor-pointer"
@@ -1014,6 +1048,7 @@ export default function Dashboard() {
         )}
 
         <NotificationReviewQueue authToken={authToken} refreshToken={Number(simLoading)} />
+        <NotificationHistory authToken={authToken} />
         {fetchError && (
           <div role="alert" className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <span>{fetchError}</span>
@@ -1492,7 +1527,7 @@ export default function Dashboard() {
                   <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
                   <span className="font-bold text-[#163300]">Free Tier View Limit:</span>
                   <span className="text-[#868685]">
-                    Displaying recent 15 transactions. Upgrade to Pro Guardian ($10/mo) for unlimited history and search across all time.
+                    Displaying recent 15 transactions. Upgrade to Pro Guardian ($10/mo) to browse your full history; load older pages to extend search.
                   </span>
                 </div>
                 <button
@@ -1713,6 +1748,17 @@ export default function Dashboard() {
                 </table>
               </div>
             </div>
+            {hasMoreTransactions && (
+              <div className="flex justify-center">
+                <button
+                  onClick={() => void loadOlderTransactions()}
+                  disabled={loadingOlderTransactions}
+                  className="rounded-full border border-[#163300] px-5 py-2 text-sm font-semibold text-[#163300] disabled:opacity-50"
+                >
+                  {loadingOlderTransactions ? "Loading older transactions…" : "Load older transactions"}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -1981,7 +2027,7 @@ export default function Dashboard() {
                       <span>Monthly free limit reached!</span>
                       <button
                         onClick={() => {
-                          setUpgradeReason("You have reached the 20 notification limit. Upgrade to Pro ($10/mo) for unlimited AI tests.");
+                          setUpgradeReason("You have reached the 20 notification limit. Upgrade to Pro ($10/mo) for unlimited app-level tests; AI availability follows OpenRouter's free-model limits.");
                           setShowUpgradeModal(true);
                         }}
                         className="underline hover:text-red-800 cursor-pointer"

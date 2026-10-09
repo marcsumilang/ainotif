@@ -12,8 +12,10 @@ import com.ainotif.AiNotifApplication
 import com.ainotif.data.local.entity.AlertEntity
 import com.ainotif.data.local.entity.TransactionEntity
 import com.ainotif.data.repository.ProcessNotificationOutcome
+import com.ainotif.data.repository.TransactionRepository
 import com.ainotif.ui.MainActivity
 import com.ainotif.util.CurrencyConverter
+import com.ainotif.util.SourceEventIds
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -32,8 +34,9 @@ class AiNotificationListenerService : NotificationListenerService() {
         super.onListenerConnected()
         instance = this
         Log.i(TAG, "AiNotificationListenerService connected and active.")
+        val repository = AiNotifApplication.instance.repository
         serviceScope.launch {
-            scanActiveNotificationsInternal()
+            scanActiveNotificationsInternal(repository)
         }
     }
 
@@ -49,12 +52,18 @@ class AiNotificationListenerService : NotificationListenerService() {
         super.onNotificationPosted(sbn)
         if (sbn == null) return
 
+        // Bind at receipt, before dispatching work. A queued callback must not
+        // select whichever account happens to be active when its coroutine runs.
+        val repository = AiNotifApplication.instance.repository
         serviceScope.launch {
-            processStatusBarNotification(sbn, skipIfDuplicate = true)
+            processStatusBarNotification(sbn, repository, skipIfDuplicate = true)
         }
     }
 
-    suspend fun scanActiveNotificationsInternal(): Int {
+    suspend fun scanActiveNotificationsInternal(
+        repository: TransactionRepository = AiNotifApplication.instance.repository
+    ): Int {
+        repository.requireActiveProfile()
         val sbns = try {
             activeNotifications
         } catch (e: Exception) {
@@ -64,18 +73,20 @@ class AiNotificationListenerService : NotificationListenerService() {
 
         var matchCount = 0
         for (sbn in sbns) {
-            if (processStatusBarNotification(sbn, skipIfDuplicate = true)) {
+            if (processStatusBarNotification(sbn, repository, skipIfDuplicate = true)) {
                 matchCount++
             }
         }
-        Log.i(TAG, "Scanned ${sbns.size} active notifications, found $matchCount new financial/alert items.")
+        Log.i(TAG, "Scanned ${sbns.size} active notifications, archived $matchCount new monitored items.")
         return matchCount
     }
 
     private suspend fun processStatusBarNotification(
         sbn: StatusBarNotification,
+        repository: TransactionRepository,
         skipIfDuplicate: Boolean = false
     ): Boolean {
+        repository.requireActiveProfile()
         val pkgName = sbn.packageName
         // Avoid listening to own notifications to prevent infinite loops
         if (pkgName == packageName) return false
@@ -89,34 +100,42 @@ class AiNotificationListenerService : NotificationListenerService() {
 
         val extras = sbn.notification.extras ?: return false
         val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()
-        val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()
-            ?: extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
+        val text = sequenceOf(
+            Notification.EXTRA_BIG_TEXT,
+            Notification.EXTRA_TEXT,
+            Notification.EXTRA_SUMMARY_TEXT,
+            Notification.EXTRA_SUB_TEXT
+        ).mapNotNull { key -> extras.getCharSequence(key)?.toString()?.takeIf { it.isNotBlank() } }.firstOrNull()
+            ?: title?.takeIf { it.isNotBlank() }
 
         if (text.isNullOrBlank()) return false
 
-        // In-memory debouncer to prevent rapid duplicate events (10 second TTL)
-        val debounceKey = "$pkgName|$title|$text"
+        // Repeated callbacks for one OS notification share an ID. Distinct
+        // notifications with identical text keep separate source identities.
+        val sourceEventId = SourceEventIds.notification(this, pkgName, sbn.key, sbn.postTime)
+        val debounceKey = sourceEventId
         val now = System.currentTimeMillis()
-        val lastSeen = recentNotificationTimestamps[debounceKey]
+        val lastSeen = recentNotificationTimestamps.putIfAbsent(debounceKey, now)
         if (lastSeen != null && now - lastSeen < 10000L) {
             Log.d(TAG, "Debounced duplicate notification event from $pkgName within 10s")
             return false
         }
-        recentNotificationTimestamps[debounceKey] = now
+        if (lastSeen != null) recentNotificationTimestamps[debounceKey] = now
         if (recentNotificationTimestamps.size > 100) {
             recentNotificationTimestamps.entries.removeIf { now - it.value > 60000L }
         }
 
         return try {
-            val repository = app.repository
             val outcome = repository.processIncomingNotification(
                 title = title,
                 text = text,
                 packageName = pkgName,
                 timestamp = sbn.postTime,
-                skipIfDuplicate = skipIfDuplicate
+                skipIfDuplicate = skipIfDuplicate,
+                sourceEventId = sourceEventId
             )
 
+            repository.requireActiveProfile()
             when (outcome) {
                 is ProcessNotificationOutcome.DroppedSecurityCode -> {
                     Log.d(TAG, "Dropped OTP/Security Code from $pkgName: ${outcome.reason}")
@@ -124,7 +143,7 @@ class AiNotificationListenerService : NotificationListenerService() {
                 }
                 is ProcessNotificationOutcome.ParsedTransaction -> {
                     Log.i(TAG, "Parsed Transaction: ${outcome.transaction.amount} ${outcome.transaction.currency} at ${outcome.transaction.merchant}")
-                    checkSpendingLimitsAndAnomalies(outcome.transaction)
+                    checkSpendingLimitsAndAnomalies(outcome.transaction, repository)
                     true
                 }
                 is ProcessNotificationOutcome.InterceptedScam -> {
@@ -141,12 +160,13 @@ class AiNotificationListenerService : NotificationListenerService() {
                     }
 
                     if (app.preferencesManager.isHighPriorityPushEnabled.value) {
-                        postScamWarningNotification(outcome.alert)
+                        postScamWarningNotification(outcome.alert, repository)
                     }
                     true
                 }
+                is ProcessNotificationOutcome.Archived -> true
                 is ProcessNotificationOutcome.Ignored -> false
-                is ProcessNotificationOutcome.ReviewRequired -> false
+                is ProcessNotificationOutcome.ReviewRequired -> true
                 is ProcessNotificationOutcome.Error -> {
                     Log.e(TAG, "Error processing notification: ${outcome.message}")
                     false
@@ -158,7 +178,8 @@ class AiNotificationListenerService : NotificationListenerService() {
         }
     }
 
-    private suspend fun checkSpendingLimitsAndAnomalies(tx: TransactionEntity) {
+    private suspend fun checkSpendingLimitsAndAnomalies(tx: TransactionEntity, repository: TransactionRepository) {
+        repository.requireActiveProfile()
         if (tx.type != "DEBIT") return
 
         val app = AiNotifApplication.instance
@@ -192,7 +213,8 @@ class AiNotificationListenerService : NotificationListenerService() {
             set(java.util.Calendar.SECOND, 0)
             set(java.util.Calendar.MILLISECOND, 0)
         }.timeInMillis
-        val totalDebitMonth = app.database.transactionDao().getTotalDebitSince(monthStart) ?: 0.0
+        val totalDebitMonth = repository.totalDebitSince(monthStart)
+        repository.requireActiveProfile()
         val totalDebitMonthFormatted = String.format(Locale.US, "%.2f", totalDebitMonth)
         if (monthlyBudget > 0 && totalDebitMonth >= monthlyBudget) {
             postAnomalyNotification(
@@ -234,7 +256,8 @@ class AiNotificationListenerService : NotificationListenerService() {
         notificationManager.notify(notificationIdCounter.incrementAndGet(), notification)
     }
 
-    private fun postScamWarningNotification(alert: AlertEntity) {
+    private fun postScamWarningNotification(alert: AlertEntity, repository: TransactionRepository) {
+        repository.requireActiveProfile()
         val notifId = notificationIdCounter.incrementAndGet()
 
         // Content intent -> opens Radar screen
@@ -253,6 +276,7 @@ class AiNotificationListenerService : NotificationListenerService() {
         val dismissIntent = Intent(this, NotificationActionReceiver::class.java).apply {
             action = NotificationActionReceiver.ACTION_DISMISS_ALERT
             putExtra(NotificationActionReceiver.EXTRA_ALERT_ID, alert.id)
+            putExtra(NotificationActionReceiver.EXTRA_PROFILE_ACTIVATION, repository.activationId)
             putExtra(NotificationActionReceiver.EXTRA_NOTIF_ID, notifId)
         }
         val dismissPendingIntent = PendingIntent.getBroadcast(

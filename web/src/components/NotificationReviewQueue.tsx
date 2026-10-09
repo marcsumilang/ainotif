@@ -4,7 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 
 interface Review {
   id: string; rawNotification: string; timestamp: string;
-  analysis: { explanation: string; diagnostics: { engine: string }; transaction: { amount: number; currency: string; merchant: string } | null };
+  analysis: {
+    explanation: string;
+    diagnostics: { engine: "jev" | "openrouter" | "heuristic" | "privacy"; model: string | null };
+    transaction: { amount: number; currency: string; merchant: string } | null;
+  };
 }
 
 export default function NotificationReviewQueue({ authToken, refreshToken }: { authToken: string | null; refreshToken: number }) {
@@ -44,7 +48,7 @@ export default function NotificationReviewQueue({ authToken, refreshToken }: { a
       <ul className="mt-4 space-y-4">
         {reviews.map((review) => (
           <li key={review.id} className="border-t border-[#e8ebe6] pt-3">
-            <p className="text-xs text-[#454745]">{new Date(review.timestamp).toLocaleString()} · {review.analysis.diagnostics.engine === "heuristic" ? "Rule-based fallback" : "Jev analysis"}</p>
+            <p className="text-xs text-[#454745]">{new Date(review.timestamp).toLocaleString()} · {review.analysis.diagnostics.engine === "heuristic" ? "Rule-based fallback" : review.analysis.diagnostics.model ?? "AI analysis"}</p>
             <p className="mt-1 whitespace-pre-wrap break-words text-sm text-[#163300]">{review.rawNotification}</p>
             <p className="mt-1 text-sm text-[#454745]">{review.analysis.explanation}</p>
             {review.analysis.transaction && <p className="mt-1 text-sm">Suggested amount: {review.analysis.transaction.currency} {review.analysis.transaction.amount.toFixed(2)} · {review.analysis.transaction.merchant}</p>}

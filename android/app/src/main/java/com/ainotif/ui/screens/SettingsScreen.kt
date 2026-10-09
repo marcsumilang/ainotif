@@ -28,6 +28,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationManagerCompat
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.lifecycleScope
+import com.ainotif.AiNotifApplication
 import com.ainotif.BuildConfig
 import com.ainotif.auth.BiometricAuthManager
 import com.ainotif.auth.ClerkAuthManager
@@ -90,12 +93,43 @@ fun SettingsScreen(
     var smsImportSummary by remember { mutableStateOf<SmsImportSummary?>(null) }
     var selectedTimeRangeDays by remember { mutableStateOf<Int?>(null) } // null = All Time
     var useLocalClassifier by remember { mutableStateOf(true) }
+    var isCheckingSmsCloudConfiguration by remember { mutableStateOf(false) }
+    var smsCloudConfigurationError by remember { mutableStateOf<String?>(null) }
+    var showAllLogs by remember { mutableStateOf(false) }
 
     LaunchedEffect(showSmsImportConfigDialog, authState, isOfflineOnly) {
         if (showSmsImportConfigDialog) {
+            smsCloudConfigurationError = null
             // Prefer the mode that can actually import ledger entries when the
             // account is connected. Local mode is explicitly review-only.
             useLocalClassifier = authState !is ClerkAuthManager.UserState.SignedIn || isOfflineOnly
+        }
+    }
+
+    fun startSmsImport() {
+        smsCloudConfigurationError = null
+        showSmsImportConfigDialog = false
+        isImportingSms = true
+        smsProgress = SmsProgress()
+        coroutineScope.launch {
+            val result = SmsInboxImporter.importHistoricalSms(
+                context = context,
+                repository = repository,
+                timeRangeDays = selectedTimeRangeDays,
+                forceLocal = useLocalClassifier,
+                onProgress = { progress ->
+                    smsProgress = progress
+                }
+            )
+            isImportingSms = false
+            result.fold(
+                onSuccess = { summary ->
+                    smsImportSummary = summary
+                },
+                onFailure = { err ->
+                    Toast.makeText(context, "Import failed: ${err.message}", Toast.LENGTH_LONG).show()
+                }
+            )
         }
     }
 
@@ -267,7 +301,7 @@ fun SettingsScreen(
                                         isScanningActiveNotifications = false
                                         Toast.makeText(
                                             context,
-                                            if (count > 0) "Captured $count active notification(s)!" else "No unread financial notifications in drawer.",
+                                            if (count > 0) "Saved $count active notification(s) from monitored apps." else "No new notifications from monitored apps.",
                                             Toast.LENGTH_SHORT
                                         ).show()
                                     }
@@ -851,6 +885,7 @@ fun SettingsScreen(
                             }
 
                             Button(
+                                enabled = !isOfflineOnly,
                                 onClick = {
                                     coroutineScope.launch {
                                         val result = repository.syncWithBackend()
@@ -876,7 +911,11 @@ fun SettingsScreen(
                         }
 
                         Text(
-                            "Sync pulls records still stored in your cloud account onto this device. Wiping local data does not delete cloud records.",
+                            if (isOfflineOnly) {
+                                "Offline-Only is on. Cloud sync is disabled, and pairing will keep local records on this device."
+                            } else {
+                                "Sync pulls records still stored in your cloud account onto this device. Wiping local data does not delete cloud records."
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
@@ -932,7 +971,7 @@ fun SettingsScreen(
                         ) {
                             Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Wipe All Local Data")
+                            Text("Clear This Profile’s Local Records")
                         }
                     }
                 }
@@ -960,9 +999,9 @@ fun SettingsScreen(
                             ClerkAuthManager.UserState.SignedOut -> "Signed Out"
                         }
                         val authLabel = when (authState) {
-                            is ClerkAuthManager.UserState.SignedIn -> "Clerk Authenticated • Neon DB Synced"
+                            is ClerkAuthManager.UserState.SignedIn -> if (isOfflineOnly) "Account profile • Offline-Only" else "Account profile • Cloud sync available"
                             is ClerkAuthManager.UserState.DemoUser -> "Demo Account (Local Only)"
-                            ClerkAuthManager.UserState.SignedOut -> "No Active Session"
+                            ClerkAuthManager.UserState.SignedOut -> "Local-only profile"
                         }
 
                         // User Profile Header
@@ -1007,6 +1046,17 @@ fun SettingsScreen(
 
                         Spacer(modifier = Modifier.height(14.dp))
 
+                        Text(
+                            text = if (isSignedIn) {
+                                "This profile shows only this account’s records and rules. Older unassigned records stay in the local-only profile; sign out to view them."
+                            } else {
+                                "Local-only records stay on this phone. Signing in opens a separate account profile and won’t upload these records."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+
                         if (!lastPairError.isNullOrBlank() && !isSignedIn) {
                             Surface(
                                 modifier = Modifier.fillMaxWidth(),
@@ -1041,7 +1091,7 @@ fun SettingsScreen(
                                             ).show()
                                         }
                                     },
-                                    enabled = !isSyncingNow,
+                                    enabled = !isSyncingNow && !isOfflineOnly,
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(10.dp)
                                 ) {
@@ -1438,11 +1488,20 @@ fun SettingsScreen(
                             if (logs.isEmpty()) {
                                 Text("No recent notification logs.", style = MaterialTheme.typography.bodySmall)
                             } else {
-                                logs.take(5).forEach { log ->
+                                logs.take(if (showAllLogs) logs.size else 5).forEach { log ->
                                     Text("• [${log.decision}] ${log.packageName}: ${log.title.orEmpty()}", fontSize = 11.sp)
                                     if (log.decision == "REVIEW") {
                                         Text(log.text.orEmpty(), fontSize = 12.sp)
                                     }
+                                }
+                                if (logs.size > 5) {
+                                    Text(
+                                        if (showAllLogs) "Show fewer logs" else "Show all ${logs.size} recent logs",
+                                        modifier = Modifier.clickable { showAllLogs = !showAllLogs },
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
                                 }
                             }
                         }
@@ -1494,8 +1553,8 @@ fun SettingsScreen(
         AlertDialog(
             onDismissRequest = { showWipeDataDialog = false },
             icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
-            title = { Text("Wipe All Local Data?") },
-            text = { Text("This permanently deletes transactions, scam alerts, and notification logs from this device only. Records still in your cloud account will return the next time you sync. Delete a cloud record while signed in to remove it from both places.") },
+            title = { Text("Clear This Profile’s Local Records?") },
+            text = { Text("This permanently deletes transactions, scam alerts, and notification logs from the current profile on this phone. Other profiles keep their records. Cloud records can return on the next sync; delete a cloud record while signed in to remove it from both places.") },
             confirmButton = {
                 Button(
                     onClick = {
@@ -1504,14 +1563,14 @@ fun SettingsScreen(
                             showWipeDataDialog = false
                             Toast.makeText(
                                 context,
-                                if (result.isSuccess) "All local data wiped" else "Could not wipe local data: ${result.exceptionOrNull()?.message}",
+                                if (result.isSuccess) "Current profile’s local records cleared" else "Could not wipe local data: ${result.exceptionOrNull()?.message}",
                                 Toast.LENGTH_LONG
                             ).show()
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
-                    Text("Wipe Everything")
+                    Text("Clear Profile Records")
                 }
             },
             dismissButton = {
@@ -1558,7 +1617,9 @@ fun SettingsScreen(
     // SMS Import Configuration Dialog
     if (showSmsImportConfigDialog) {
         AlertDialog(
-            onDismissRequest = { showSmsImportConfigDialog = false },
+            onDismissRequest = {
+                if (!isCheckingSmsCloudConfiguration) showSmsImportConfigDialog = false
+            },
             title = { Text("Import Historical SMS") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1625,44 +1686,70 @@ fun SettingsScreen(
                         }
                         Switch(
                             checked = useLocalClassifier,
-                            onCheckedChange = { useLocalClassifier = it }
+                            enabled = !isCheckingSmsCloudConfiguration,
+                            onCheckedChange = {
+                                useLocalClassifier = it
+                                smsCloudConfigurationError = null
+                            }
+                        )
+                    }
+                    smsCloudConfigurationError?.let { message ->
+                        Text(
+                            message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
                         )
                     }
                 }
             },
             confirmButton = {
                 Button(
+                    enabled = !isCheckingSmsCloudConfiguration,
                     onClick = {
-                        showSmsImportConfigDialog = false
-                        isImportingSms = true
-                        smsProgress = SmsProgress()
-                        coroutineScope.launch {
-                            val result = SmsInboxImporter.importHistoricalSms(
-                                context = context,
-                                repository = repository,
-                                timeRangeDays = selectedTimeRangeDays,
-                                forceLocal = useLocalClassifier,
-                                onProgress = { progress ->
-                                    smsProgress = progress
-                                }
-                            )
-                            isImportingSms = false
-                            result.fold(
-                                onSuccess = { summary ->
-                                    smsImportSummary = summary
-                                },
-                                onFailure = { err ->
-                                    Toast.makeText(context, "Import failed: ${err.message}", Toast.LENGTH_LONG).show()
-                                }
-                            )
-                }
-            }
-        ) {
-                    Text(if (useLocalClassifier) "Scan for Reviews Only" else "Import with Cloud AI")
+                        smsCloudConfigurationError = null
+                        if (useLocalClassifier) {
+                            startSmsImport()
+                        } else if (authState !is ClerkAuthManager.UserState.SignedIn) {
+                            smsCloudConfigurationError = "Sign in before using cloud classification. No SMS was scanned or sent."
+                        } else if (isOfflineOnly) {
+                            smsCloudConfigurationError = "Turn off Offline-Only mode before using cloud classification. No SMS was scanned or sent."
+                        } else {
+                            isCheckingSmsCloudConfiguration = true
+                            coroutineScope.launch {
+                                apiClient.checkClassificationConfiguration().fold(
+                                    onSuccess = { configured ->
+                                        isCheckingSmsCloudConfiguration = false
+                                        if (configured == false) {
+                                            smsCloudConfigurationError = "Cloud AI is not configured on the server. No SMS was scanned or sent. Configure the OpenRouter key on the backend, then try again."
+                                        } else {
+                                            startSmsImport()
+                                        }
+                                    },
+                                    onFailure = {
+                                        isCheckingSmsCloudConfiguration = false
+                                        smsCloudConfigurationError = "Could not verify cloud classification. No SMS was scanned or sent. Check your connection and retry."
+                                    }
+                                )
+                            }
+                        }
+                    }
+                ) {
+                    if (isCheckingSmsCloudConfiguration) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Checking Cloud AI...")
+                        }
+                    } else {
+                        Text(if (useLocalClassifier) "Scan for Reviews Only" else "Import with Cloud AI")
+                    }
                 }
             },
             dismissButton = {
-                OutlinedButton(onClick = { showSmsImportConfigDialog = false }) {
+                OutlinedButton(
+                    enabled = !isCheckingSmsCloudConfiguration,
+                    onClick = { showSmsImportConfigDialog = false }
+                ) {
                     Text("Cancel")
                 }
             }
@@ -1749,14 +1836,23 @@ fun SettingsScreen(
             },
             title = {
                 Text(
-                    if (summary.processingErrors > 0) "SMS Scan Finished with Errors" else "SMS Import Complete",
+                    when {
+                        summary.stoppedEarly -> "SMS Scan Stopped"
+                        summary.processingErrors > 0 -> "SMS Scan Finished with Errors"
+                        summary.onDeviceReviewOnly -> "SMS Review Scan Complete"
+                        else -> "SMS Import Complete"
+                    },
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
             },
             text = {
                 Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "Processed ${summary.totalScanned} messages from your SMS inbox:",
+                        if (summary.stoppedEarly) {
+                            "Scanned ${summary.totalScanned} of ${summary.totalAvailable} messages before stopping:"
+                        } else {
+                            "Processed ${summary.totalScanned} messages from your SMS inbox:"
+                        },
                         style = MaterialTheme.typography.bodyMedium
                     )
 
@@ -1783,7 +1879,10 @@ fun SettingsScreen(
                                 Text("${summary.duplicatesSkipped}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             }
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Needs Review (not imported):", fontSize = 13.sp)
+                                Text(
+                                    if (summary.onDeviceReviewOnly) "Likely messages flagged for review:" else "Needs Review (not imported):",
+                                    fontSize = 13.sp
+                                )
                                 Text("${summary.reviewRequired}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             }
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -1798,9 +1897,9 @@ fun SettingsScreen(
                     }
                     if (summary.onDeviceReviewOnly && summary.transactionsImported == 0 && summary.reviewRequired > 0) {
                         Text(
-                            "On-device review does not add transactions. Turn off Fast On-Device Review and scan again to use cloud classification.",
+                            "Fast On-Device Review does not import transactions. Review entries are available in Settings under Interception Audit Log.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
                         )
                     }
                     summary.processingErrorMessage?.let { message ->
@@ -1884,7 +1983,14 @@ fun SettingsScreen(
                         val legacyToken = parsedUri?.getQueryParameter("token")
                         val finalUserId = parsedUri?.getQueryParameter("userId") ?: manualUserIdInput.trim()
                         val finalEmail = parsedUri?.getQueryParameter("email") ?: manualEmailInput.trim()
-                        coroutineScope.launch {
+                        // The UI profile is recreated during pairing; the Activity
+                        // scope must survive that change to finish sign-in/sync.
+                        val pairingScope = (context as? LifecycleOwner)?.lifecycleScope
+                        if (pairingScope == null) {
+                            Toast.makeText(context, "Open pairing from the main app screen.", Toast.LENGTH_LONG).show()
+                            return@Button
+                        }
+                        pairingScope.launch {
                             try {
                                 if (!ticket.isNullOrBlank()) {
                                     authManager.setSession(finalUserId, finalEmail, ticket)
@@ -1893,9 +1999,12 @@ fun SettingsScreen(
                                 } else {
                                     throw IllegalArgumentException("No ticket or token found in that pairing link.")
                                 }
-                                val result = repository.syncWithBackend()
+                                val app = AiNotifApplication.instance
+                                val result = if (app.preferencesManager.isOfflineOnly.value) null else app.repository.syncWithBackend()
                                 val displayUser = authManager.getUserId() ?: finalUserId.ifBlank { "account" }
-                                val msg = if (result.isSuccess) {
+                                val msg = if (result == null) {
+                                    "Connected to Clerk ($displayUser); Offline-Only mode kept local data on this device."
+                                } else if (result.isSuccess) {
                                     "Connected to Clerk ($displayUser) & Synced!"
                                 } else {
                                     "Paired ($displayUser). Sync failed: ${result.exceptionOrNull()?.message ?: "unknown error"}"
@@ -1908,7 +2017,7 @@ fun SettingsScreen(
                         showManualTokenDialog = false
                     }
                 ) {
-                    Text("Pair & Sync")
+                    Text(if (isOfflineOnly) "Pair without Sync" else "Pair & Sync")
                 }
             },
             dismissButton = {

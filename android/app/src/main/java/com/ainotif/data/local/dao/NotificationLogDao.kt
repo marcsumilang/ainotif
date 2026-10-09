@@ -14,6 +14,9 @@ interface NotificationLogDao {
     @Insert
     suspend fun insertLog(log: NotificationLogEntity): Long
 
+    @Query("SELECT EXISTS(SELECT 1 FROM notification_logs WHERE sourceEventId = :sourceEventId AND decision IN ('DROPPED_OTP', 'IGNORED', 'REVIEW', 'PROCESSED_TRANSACTION', 'SCAM_ALERT', 'ANALYZED_IGNORED') LIMIT 1)")
+    suspend fun hasProcessedSourceEvent(sourceEventId: String): Boolean
+
     @Query("DELETE FROM notification_logs WHERE id NOT IN (SELECT id FROM notification_logs ORDER BY timestamp DESC LIMIT 500)")
     suspend fun pruneOldLogs()
 

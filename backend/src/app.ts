@@ -33,18 +33,28 @@ app.get("/", (c) => {
     name: "AiNotif API",
     status: "online",
     version: "1.0.0",
-    description: "Typesafe AI Banking Notification & Phishing Interceptor API",
+    description: "OpenRouter AI Banking Notification & Phishing Interceptor API",
     time: new Date().toISOString(),
   });
 });
 
 app.get("/health", (c) => {
-  return c.json({ status: "healthy", timestamp: Date.now() });
+  return c.json({
+    status: "healthy",
+    timestamp: Date.now(),
+    classificationConfigured: Boolean(process.env.OPENROUTER_API_KEY?.trim()),
+  });
 });
 
 // Authenticated API Routes
 const api = new Hono();
 api.use("*", clerkAuthMiddleware);
+
+api.get("/session", (c) => {
+  const { userId } = c.get("auth");
+  c.header("Cache-Control", "private, no-store");
+  return c.json({ userId });
+});
 
 api.route("/", notificationsRouter);
 api.route("/transactions", transactionsRouter);

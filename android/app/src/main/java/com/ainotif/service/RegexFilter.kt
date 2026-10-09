@@ -12,7 +12,7 @@ sealed class FilterDecision {
 
   /**
    * The notification exhibits financial keywords, currency symbols, or comes from a banking app.
-   * Forward to backend for typesafe AI classification and scam detection.
+   * Forward to backend for AI classification and scam detection.
    */
   data class ForwardForAi(val detectedSignals: List<String>) : FilterDecision()
 
@@ -31,10 +31,12 @@ object RegexFilter {
     Regex("""\b(password\s+reset|reset\s+your\s+password|temporary\s+password)\b""", RegexOption.IGNORE_CASE),
     Regex("""\b(login\s+code|access\s+code|secret\s+code)\b""", RegexOption.IGNORE_CASE),
     Regex("""\b(do\s+not\s+share\s+this\s+code|never\s+share\s+this\s+code|don't\s+share\s+this\s+code)\b""", RegexOption.IGNORE_CASE),
+    Regex("""\b(share|send|tell|provide|forward|reply\s+with|enter|submit)\s+(me\s+)?(your\s+)?(otp|((one[ -]time\s+|verification\s+|security\s+|login\s+|access\s+)?(code|pin|password|passcode)))\b""", RegexOption.IGNORE_CASE),
     Regex("""\bcode\s+is\s*:?\s*\d[\d\s\-]{3,11}\b""", RegexOption.IGNORE_CASE),
     Regex("""\b(?:use|enter)\s+(?:code\s*:?\s*)?\d[\d\s\-]{3,11}\b""", RegexOption.IGNORE_CASE),
     Regex("""\b\d{3}[\s\-]\d{3}\b"""),
     Regex("""\b(?:code|pin|password|passcode|cvv|otp)\s*(?:is|:|=)\s*\S+""", RegexOption.IGNORE_CASE),
+    Regex("""\b(otp|pin|password|passcode|((one[ -]time|verification|security|login|access)\s+code))\s+\d{4,8}\b""", RegexOption.IGNORE_CASE),
     Regex("""\b\d{4,8}\s+is\s+your\s+(?:verification|security|login|access|2fa|mfa)\s+code\b""", RegexOption.IGNORE_CASE),
     Regex("""\b(?:2fa|mfa)\s+(?:code|token)\b""", RegexOption.IGNORE_CASE),
     Regex("""\b(?:do\s+not|never|don't)\s+share\s+your\s+(?:password|pin|code|otp)\b""", RegexOption.IGNORE_CASE),
@@ -88,7 +90,7 @@ object RegexFilter {
   /**
    * Evaluates an incoming notification title and text.
    */
-  fun evaluate(title: String?, text: String?, packageName: String?): FilterDecision {
+  fun evaluate(title: String?, text: String?, packageName: String?, classifyAll: Boolean = false): FilterDecision {
     val fullText = "${title.orEmpty()} ${text.orEmpty()}".trim()
     if (fullText.isBlank()) return FilterDecision.Ignore
 
@@ -121,7 +123,7 @@ object RegexFilter {
       detectedSignals.add("Financial SMS sender label")
     }
 
-    return if (detectedSignals.isNotEmpty()) {
+    return if (detectedSignals.isNotEmpty() || classifyAll) {
       FilterDecision.ForwardForAi(detectedSignals)
     } else {
       FilterDecision.Ignore

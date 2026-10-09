@@ -50,4 +50,7 @@ interface AlertDao {
 
     @Query("SELECT EXISTS(SELECT 1 FROM suspicious_alerts WHERE rawNotification = :rawNotification AND ABS(timestamp - :timestamp) <= :toleranceMs LIMIT 1)")
     suspend fun hasSimilarAlert(rawNotification: String, timestamp: Long, toleranceMs: Long = 300000L): Boolean
+
+    @Query("SELECT EXISTS(SELECT 1 FROM suspicious_alerts WHERE sourceEventId = :sourceEventId LIMIT 1)")
+    suspend fun hasSourceEvent(sourceEventId: String): Boolean
 }

@@ -1,9 +1,10 @@
 package com.ainotif.data.local.entity
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "transactions")
+@Entity(tableName = "transactions", indices = [Index(value = ["sourceEventId"])])
 data class TransactionEntity(
     @PrimaryKey val id: String,
     val amount: Double,
@@ -14,6 +15,7 @@ data class TransactionEntity(
     val rawNotification: String,
     val sourcePackage: String?,
     val timestamp: Long,
+    val sourceEventId: String? = null,
     val note: String? = null,
     val isSynced: Boolean = true
 )

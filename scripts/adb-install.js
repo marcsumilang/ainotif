@@ -13,7 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execSync, spawn } = require('child_process');
+const { execFileSync, spawn } = require('child_process');
 
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const PACKAGE_NAME = 'com.ainotif';
@@ -40,41 +40,61 @@ function formatTimeAgo(date) {
   return date.toLocaleString();
 }
 
-// Find ADB binary
-function findAdb() {
-  // 1. Try PATH
+function readSdkDirFromLocalProperties() {
+  const localPropertiesPath = path.join(PROJECT_ROOT, 'android', 'local.properties');
+  if (!fs.existsSync(localPropertiesPath)) return null;
+
   try {
-    const stdout = execSync('which adb', { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf-8' });
-    const adbPath = stdout.trim();
-    if (adbPath && fs.existsSync(adbPath)) return adbPath;
-  } catch (e) {
-    // continue
-  }
+    const sdkLine = fs.readFileSync(localPropertiesPath, 'utf8')
+      .split(/\r?\n/)
+      .find(line => /^\s*sdk\.dir\s*=/.test(line));
+    if (!sdkLine) return null;
 
-  // 2. Try common Android SDK paths
-  const candidates = [
-    process.env.ANDROID_HOME ? path.join(process.env.ANDROID_HOME, 'platform-tools', 'adb') : null,
-    process.env.ANDROID_SDK_ROOT ? path.join(process.env.ANDROID_SDK_ROOT, 'platform-tools', 'adb') : null,
-    path.join(os.homedir(), 'Android', 'Sdk', 'platform-tools', 'adb'),
-    path.join(os.homedir(), 'Android', 'sdk', 'platform-tools', 'adb'),
-    '/opt/android-sdk/platform-tools/adb',
-    '/usr/lib/android-sdk/platform-tools/adb',
-    '/usr/bin/adb',
+    const rawPath = sdkLine.slice(sdkLine.indexOf('=') + 1).trim();
+    return rawPath.replace(/\\(.)/g, '$1');
+  } catch {
+    return null;
+  }
+}
+
+function isExecutableFile(filePath) {
+  try {
+    if (!fs.statSync(filePath).isFile()) return false;
+    if (process.platform !== 'win32') fs.accessSync(filePath, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Find ADB on PATH, in the configured Android SDK, or in the platform default.
+function findAdb() {
+  const executable = process.platform === 'win32' ? 'adb.exe' : 'adb';
+  const pathCandidates = (process.env.PATH || '')
+    .split(path.delimiter)
+    .filter(Boolean)
+    .map(dir => path.join(dir, executable));
+  const sdkRoots = [
+    process.env.ANDROID_HOME,
+    process.env.ANDROID_SDK_ROOT,
+    readSdkDirFromLocalProperties(),
+    path.join(os.homedir(), 'Library', 'Android', 'sdk'),
+    path.join(os.homedir(), 'Android', 'Sdk'),
+    path.join(os.homedir(), 'Android', 'sdk'),
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Android', 'Sdk') : null,
+    '/opt/android-sdk',
+    '/usr/lib/android-sdk',
   ].filter(Boolean);
+  const sdkCandidates = sdkRoots.map(root => path.join(root, 'platform-tools', executable));
+  const candidates = [...pathCandidates, ...sdkCandidates, '/usr/bin/adb'];
 
-  for (const cand of candidates) {
-    if (fs.existsSync(cand)) {
-      return cand;
-    }
-  }
-
-  return 'adb'; // fallback to standard command name
+  return candidates.find(isExecutableFile) || null;
 }
 
 // Get connected ADB devices
 function getConnectedDevices(adb) {
   try {
-    const output = execSync(`"${adb}" devices -l`, { encoding: 'utf-8' });
+    const output = execFileSync(adb, ['devices', '-l'], { encoding: 'utf-8' });
     const lines = output.split('\n');
     const devices = [];
 
@@ -178,6 +198,11 @@ async function main() {
   };
 
   const adb = findAdb();
+  if (!adb) {
+    console.error('❌ Android Debug Bridge (adb) was not found. Install Android SDK Platform-Tools or set ANDROID_HOME/ANDROID_SDK_ROOT.');
+    console.error('   This installer also checks android/local.properties and the standard macOS SDK location.');
+    process.exit(1);
+  }
 
   // If user just wants device list
   const devices = getConnectedDevices(adb);
@@ -238,7 +263,7 @@ async function main() {
   if (flags.launchOnly) {
     console.log(`🚀 Launching ${PACKAGE_NAME} on ${selectedDevice.model} (${selectedDevice.serial})...`);
     try {
-      execSync(`"${adb}" -s ${selectedDevice.serial} shell am start -n ${LAUNCH_ACTIVITY}`, { stdio: 'inherit' });
+      execFileSync(adb, ['-s', selectedDevice.serial, 'shell', 'am', 'start', '-n', LAUNCH_ACTIVITY], { stdio: 'inherit' });
       console.log('✅ App launched successfully.');
     } catch (err) {
       console.error('❌ Failed to launch app:', err.message);
@@ -297,7 +322,7 @@ async function main() {
       if (flags.launch) {
         console.log(`🚀 Launching ${PACKAGE_NAME}...`);
         try {
-          execSync(`"${adb}" -s ${selectedDevice.serial} shell am start -n ${LAUNCH_ACTIVITY}`, { stdio: 'inherit' });
+          execFileSync(adb, ['-s', selectedDevice.serial, 'shell', 'am', 'start', '-n', LAUNCH_ACTIVITY], { stdio: 'inherit' });
         } catch (e) {
           console.error('⚠️ Could not automatically launch app:', e.message);
         }

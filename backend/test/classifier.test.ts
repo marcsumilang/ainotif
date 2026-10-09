@@ -122,14 +122,28 @@ await test("missing key, service errors, malformed results abstain safely", asyn
 });
 await test("one batched request records usage, resolved model and latency", async () => {
   const p = { text: "Paid $50 at Store" }; let calls = 0;
-  const fixture = jevFixture(p); fixture.usage = { input_tokens: 123, output_tokens: 45 };
+  const fixture = {
+    model: "fixture/free-model",
+    choices: [{ message: { content: JSON.stringify({
+      classification: "TRANSACTION", confidence: 0.99, phishingProbability: 0.01, credentialRequestProbability: 0.01,
+      riskScore: 0, scamReason: null, scamIndicators: [], completedMovementProbability: 0.99,
+      status: "COMPLETED", amountCandidateId: "amount_0", amountConfidence: 0.99,
+      merchantCandidateId: "merchant_0", merchantConfidence: 0.99, direction: "DEBIT", directionConfidence: 0.99,
+      category: "Shopping", categoryConfidence: 0.99, explanation: "Completed card purchase.",
+    }) } }],
+    usage: { prompt_tokens: 123, completion_tokens: 45 },
+  };
   const r = await classifyNotification(p, { apiKey: "fake", fetch: async (url, init) => {
-    calls++; assert.equal(url, "https://api.typesafe.ai/v1/systemone");
-    const body = JSON.parse(init!.body as string); assert.equal(Object.keys(body.questions).length, 8);
+    calls++; assert.equal(url, "https://openrouter.ai/api/v1/chat/completions");
+    const body = JSON.parse(init!.body as string); assert.equal(body.model, "openrouter/free");
+    assert.equal(body.provider.zdr, true); assert.equal(body.provider.data_collection, "deny");
+    assert.equal(body.provider.require_parameters, true);
+    assert.equal(body.response_format.type, "json_schema");
     return Response.json(fixture);
   } });
-  assert.equal(calls, 1); assert.equal(r.diagnostics.model, "jev-contract-fixture");
-  assert.equal(r.diagnostics.usage?.input_tokens, 123); assert.ok(r.diagnostics.latencyMs >= 0);
+  assert.equal(calls, 1); assert.equal(r.diagnostics.engine, "openrouter"); assert.equal(r.diagnostics.model, "fixture/free-model");
+  assert.equal(r.classification, "REVIEW"); assert.equal(r.decision.saveTransaction, false); assert.equal(r.transaction?.amount, 50);
+  assert.equal(r.diagnostics.usage?.input_tokens, 123); assert.equal(r.diagnostics.usage?.output_tokens, 45); assert.ok(r.diagnostics.latencyMs >= 0);
 });
 await test("unsupported choices and invalid distributions are rejected", () => {
   const p = { text: "Paid $50 at Store" };
@@ -165,4 +179,4 @@ await test("master notification examples remain review-only during fallback", ()
     assert.equal(result.transaction, null);
   }
 });
-console.log(`${passed} classifier contract checks passed. Live Jev API tokens used: 0. Mock usage values are test data.`);
+console.log(`${passed} classifier contract checks passed. Live OpenRouter API tokens used: 0. Mock usage values are test data.`);

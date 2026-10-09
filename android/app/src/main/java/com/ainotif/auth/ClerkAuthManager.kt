@@ -11,18 +11,32 @@ import androidx.security.crypto.MasterKey
 import com.ainotif.BuildConfig
 import com.clerk.api.Clerk
 import com.clerk.api.network.serialization.ClerkResult
+import com.clerk.api.session.Session
+import com.clerk.api.signin.SignIn
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.atomic.AtomicLong
 
-class ClerkAuthManager(context: Context) {
+class ClerkAuthManager(
+    context: Context,
+    private val verifyLegacySession: suspend (String) -> String
+) {
+    private val authMutationMutex = Mutex()
+    private val stateLock = Any()
+    private val authGeneration = AtomicLong()
     private val appContext = context.applicationContext
     private val authScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val isConfigured = BuildConfig.CLERK_PUBLISHABLE_KEY.isNotBlank()
@@ -55,33 +69,27 @@ class ClerkAuthManager(context: Context) {
     }
 
     init {
-        // NOTE: do NOT delete a legacy JWT here. Older web builds still pair by
-        // sending a short-lived Clerk session token (?token=...) which must
-        // survive until the new ticket flow completes. The native SDK session
-        // is preferred; the legacy token is only a cross-version fallback.
+        // Only an explicitly server-verified legacy session can select an
+        // owner profile. Native sessions never fall back to a persisted JWT.
         if (isConfigured) {
             authScope.launch {
-                Clerk.userFlow.collect { user ->
-                    if (prefs.getBoolean(KEY_DEMO_MODE, false)) {
-                        _userState.value = UserState.DemoUser(DEMO_USER_ID)
-                    } else if (user != null) {
-                        _userState.value = UserState.SignedIn(
-                            userId = user.id,
-                            email = user.primaryEmailAddress?.emailAddress.orEmpty()
-                        )
-                    } else {
-                        // No native session: keep a legacy JWT pairing (older web
-                        // builds) instead of flipping a just-restored login back
-                        // to Signed Out.
-                        val legacyUserId = prefs.getString("clerk_user_id", null)
-                        val legacyToken = prefs.getString("clerk_jwt", null)
-                        if (!legacyUserId.isNullOrBlank() && !legacyToken.isNullOrBlank()) {
-                            _userState.value = UserState.SignedIn(
-                                userId = legacyUserId,
-                                email = prefs.getString("clerk_email", "").orEmpty()
-                            )
-                        } else {
+                combine(Clerk.isInitialized, Clerk.sessionFlow, Clerk.userFlow) { ready, _, _ -> ready }
+                    .collect { ready ->
+                    if (!ready) return@collect
+                    synchronized(stateLock) {
+                        if (prefs.getBoolean(KEY_DEMO_MODE, false)) {
+                            _userState.value = UserState.DemoUser(DEMO_USER_ID)
+                        } else if (prefs.getBoolean(KEY_LOCAL_SIGN_OUT, false)) {
                             _userState.value = UserState.SignedOut
+                        } else if (prefs.getBoolean(KEY_VERIFIED_LEGACY, false)) {
+                            // Explicit legacy mode was verified by /api/session.
+                            // It never acts as fallback for a failed native session.
+                            _userState.value = loadCurrentState()
+                        } else {
+                            val activeUser = Clerk.activeUser
+                            _userState.value = if (activeUser != null) UserState.SignedIn(
+                                activeUser.id, activeUser.primaryEmailAddress?.emailAddress.orEmpty()
+                            ) else UserState.SignedOut
                         }
                     }
                 }
@@ -91,11 +99,12 @@ class ClerkAuthManager(context: Context) {
 
     private fun loadCurrentState(): UserState {
         if (prefs.getBoolean(KEY_DEMO_MODE, false)) return UserState.DemoUser(DEMO_USER_ID)
-        // Cross-version fallback: an older web build may have paired this
-        // device with a short-lived JWT before the native ticket flow existed.
+        if (prefs.getBoolean(KEY_LOCAL_SIGN_OUT, false)) return UserState.SignedOut
+        // Unverified pre-upgrade legacy sessions must pair again. Their old
+        // records remain accessible in the signed-out local profile.
         val legacyUserId = prefs.getString("clerk_user_id", null)
         val legacyToken = prefs.getString("clerk_jwt", null)
-        if (!legacyUserId.isNullOrBlank() && !legacyToken.isNullOrBlank()) {
+        if (prefs.getBoolean(KEY_VERIFIED_LEGACY, false) && !legacyUserId.isNullOrBlank() && !legacyToken.isNullOrBlank()) {
             return UserState.SignedIn(
                 userId = legacyUserId,
                 email = prefs.getString("clerk_email", "").orEmpty()
@@ -116,26 +125,28 @@ class ClerkAuthManager(context: Context) {
     }
 
     /** Returns a freshly managed Clerk session token. The SDK refreshes its short-lived JWTs. */
-    suspend fun getAuthToken(): String? {
-        if (_userState.value is UserState.DemoUser) return null
-        if (isConfigured) {
-            val initialized = withTimeoutOrNull(CLERK_INIT_TIMEOUT_MS) {
-                Clerk.isInitialized.first { it }
-                true
-            } ?: false
-            if (initialized && Clerk.userFlow.value != null) {
-                when (val result = Clerk.auth.getToken()) {
-                    is ClerkResult.Success -> {
-                        if (!result.value.isNullOrBlank()) return result.value
-                    }
-                    is ClerkResult.Failure -> {
-                        Log.w(TAG, "Clerk getToken failed, trying legacy token", result.throwable)
-                    }
-                }
+    suspend fun getAuthToken(expectedOwnerId: String): String? {
+        val requestedSession = _userState.value
+        if (prefs.getBoolean(KEY_LOCAL_SIGN_OUT, false) ||
+            (requestedSession as? UserState.SignedIn)?.userId != expectedOwnerId) return null
+        if (prefs.getBoolean(KEY_VERIFIED_LEGACY, false)) {
+            if (prefs.getString("clerk_user_id", null) != expectedOwnerId) return null
+            return prefs.getString("clerk_jwt", null)?.takeIf {
+                it.isNotBlank() && _userState.value === requestedSession
             }
         }
-        // Legacy fallback (older web builds): short-lived JWT persisted at pairing time.
-        return prefs.getString("clerk_jwt", null)?.takeIf { it.isNotBlank() }
+        if (!isConfigured) return null
+        val initialized = withTimeoutOrNull(CLERK_INIT_TIMEOUT_MS) {
+            Clerk.isInitialized.first { it }
+            true
+        } ?: false
+        if (!initialized || _userState.value !== requestedSession || Clerk.activeUser?.id != expectedOwnerId) return null
+        return when (val result = Clerk.auth.getToken()) {
+            is ClerkResult.Success -> result.value.takeIf {
+                it.isNotBlank() && _userState.value === requestedSession && Clerk.activeUser?.id == expectedOwnerId
+            }
+            is ClerkResult.Failure -> null
+        }
     }
 
     fun getUserId(): String? = when (val state = _userState.value) {
@@ -145,7 +156,7 @@ class ClerkAuthManager(context: Context) {
     }
 
     /** Redeems a one-time Clerk sign-in ticket and lets the native SDK retain/refresh the session. */
-    suspend fun setSession(userId: String, email: String, ticket: String) {
+    suspend fun setSession(userId: String, email: String, ticket: String) = authMutationMutex.withLock {
         if (!isConfigured) {
             // No native SDK key: fall back to legacy token path is impossible
             // without a token, so fail loudly instead of silently staying out.
@@ -162,32 +173,68 @@ class ClerkAuthManager(context: Context) {
                 throw IllegalStateException(msg)
             }
 
-        when (val result = Clerk.auth.signInWithTicket(ticket)) {
-            is ClerkResult.Success -> {
-                prefs.edit()
-                    .remove(KEY_DEMO_MODE)
-                    .remove("clerk_jwt")
-                    .remove("clerk_user_id")
-                    .remove("clerk_email")
-                    .apply()
-                val currentUser = Clerk.activeUser
-                val resolvedUserId = currentUser?.id ?: userId
-                if (resolvedUserId.isBlank()) {
-                    val msg = "Clerk signed in but did not return a user ID."
-                    setPairError(msg)
-                    throw IllegalStateException(msg)
+        val attempt = synchronized(stateLock) {
+            prefs.edit().putBoolean(KEY_LOCAL_SIGN_OUT, true).apply()
+            _userState.value = UserState.SignedOut
+            authGeneration.incrementAndGet()
+        }
+        try {
+            when (val result = Clerk.auth.signInWithTicket(ticket)) {
+                is ClerkResult.Success -> {
+                    val signIn = result.value
+                    require(signIn.status == SignIn.Status.COMPLETE) {
+                        "Clerk sign-in needs additional verification; finish sign-in on the web and pair again."
+                    }
+                    val sessionId = signIn.createdSessionId?.takeIf { it.isNotBlank() }
+                        ?: throw IllegalStateException("Clerk did not create a pairing session.")
+                    val pairedSession = when (val activation = Clerk.auth.setActive(sessionId = sessionId)) {
+                        is ClerkResult.Success -> activation.value
+                        is ClerkResult.Failure -> throw activation.throwable
+                            ?: IllegalStateException("Clerk could not activate the pairing session.")
+                    }
+                    require(pairedSession.status == Session.SessionStatus.ACTIVE && pairedSession.user?.id == userId) {
+                        "Pairing account does not match the activated Clerk session."
+                    }
+                    val currentUser = withTimeoutOrNull(CLERK_INIT_TIMEOUT_MS) {
+                        combine(Clerk.sessionFlow, Clerk.userFlow) { _, _ ->
+                            Clerk.activeUser.takeIf { Clerk.activeSession?.id == sessionId }
+                        }
+                            .first { it?.id == userId }
+                    } ?: throw IllegalStateException("Clerk signed in but did not return an active verified user.")
+                    val resolvedUserId = currentUser.id
+                    require(resolvedUserId.isNotBlank() && resolvedUserId == userId) {
+                        "Pairing account does not match the authenticated Clerk user."
+                    }
+                    synchronized(stateLock) {
+                        check(authGeneration.get() == attempt) { "Sign-in was cancelled by an account change." }
+                        prefs.edit()
+                            .remove(KEY_LOCAL_SIGN_OUT)
+                            .remove(KEY_VERIFIED_LEGACY)
+                            .remove(KEY_DEMO_MODE)
+                            .remove("clerk_jwt")
+                            .remove("clerk_user_id")
+                            .remove("clerk_email")
+                            .apply()
+                        _userState.value = UserState.SignedIn(
+                            userId = resolvedUserId,
+                            email = currentUser.primaryEmailAddress?.emailAddress.orEmpty()
+                        )
+                        clearPairError()
+                    }
                 }
-                _userState.value = UserState.SignedIn(
-                    userId = resolvedUserId,
-                    email = currentUser?.primaryEmailAddress?.emailAddress ?: email
-                )
-                clearPairError()
+                is ClerkResult.Failure -> {
+                    val msg = result.throwable?.message ?: "Clerk rejected the one-time pairing ticket."
+                    setPairError("Clerk pairing failed: $msg")
+                    throw result.throwable ?: IllegalStateException("Clerk rejected the one-time pairing ticket.")
+                }
             }
-            is ClerkResult.Failure -> {
-                val msg = result.throwable?.message ?: "Clerk rejected the one-time pairing ticket."
-                setPairError("Clerk pairing failed: $msg")
-                throw result.throwable ?: IllegalStateException("Clerk rejected the one-time pairing ticket.")
+        } catch (error: Throwable) {
+            // A rejected or cancelled redemption must not leave a hidden SDK
+            // session that could be restored on a later launch.
+            withContext(NonCancellable) {
+                runCatching { Clerk.auth.signOut() }
             }
+            throw error
         }
     }
 
@@ -196,30 +243,53 @@ class ClerkAuthManager(context: Context) {
      * session JWT (?token=...). Persists it so sync can run immediately;
      * the native ticket flow remains preferred when a ticket is present.
      */
-    fun setSessionWithToken(userId: String, email: String, token: String) {
+    suspend fun setSessionWithToken(userId: String, email: String, token: String) = authMutationMutex.withLock {
         if (userId.isBlank()) throw IllegalArgumentException("The Clerk user ID is missing.")
         if (token.isBlank()) throw IllegalArgumentException("The Clerk session token is missing.")
-        prefs.edit()
-            .remove(KEY_DEMO_MODE)
-            .putString("clerk_jwt", token)
-            .putString("clerk_user_id", userId)
-            .putString("clerk_email", email)
-            .apply()
-        _userState.value = UserState.SignedIn(userId = userId, email = email)
-        clearPairError()
+        // URL userId is untrusted. Verify the bearer with the server before
+        // selecting an owner database; parsing a JWT payload is not verification.
+        val attempt = synchronized(stateLock) { authGeneration.incrementAndGet() }
+        val verifiedUserId = verifyLegacySession(token)
+        require(verifiedUserId.isNotBlank() && verifiedUserId == userId) {
+            "Pairing account does not match the verified session."
+        }
+        synchronized(stateLock) {
+            check(authGeneration.get() == attempt) { "Pairing was cancelled by an account change." }
+            prefs.edit()
+                .remove(KEY_LOCAL_SIGN_OUT)
+                .putBoolean(KEY_VERIFIED_LEGACY, true)
+                .remove(KEY_DEMO_MODE)
+                .putString("clerk_jwt", token)
+                .putString("clerk_user_id", userId)
+                .putString("clerk_email", email)
+                .apply()
+            _userState.value = UserState.SignedIn(userId = userId, email = email)
+            clearPairError()
+        }
     }
 
-    fun setDemoMode() {
+    fun setDemoMode() = synchronized(stateLock) {
+        authGeneration.incrementAndGet()
         prefs.edit().clear().putBoolean(KEY_DEMO_MODE, true).apply()
         _userState.value = UserState.DemoUser(DEMO_USER_ID)
-        if (isConfigured) authScope.launch { runCatching { Clerk.auth.signOut() } }
+        if (isConfigured) authScope.launch {
+            authMutationMutex.withLock {
+                if (_userState.value is UserState.DemoUser) runCatching { Clerk.auth.signOut() }
+            }
+        }
     }
 
-    fun signOut() {
+    fun signOut() = synchronized(stateLock) {
+        authGeneration.incrementAndGet()
+        // Invalidate local access immediately, even while offline or SDK logout fails.
+        prefs.edit().clear().putBoolean(KEY_LOCAL_SIGN_OUT, true).apply()
+        _userState.value = UserState.SignedOut
         authScope.launch {
-            if (isConfigured) runCatching { Clerk.auth.signOut() }
-            prefs.edit().clear().apply()
-            _userState.value = UserState.SignedOut
+            authMutationMutex.withLock {
+                if (_userState.value === UserState.SignedOut && isConfigured) {
+                    runCatching { Clerk.auth.signOut() }
+                }
+            }
         }
     }
 
@@ -251,6 +321,8 @@ class ClerkAuthManager(context: Context) {
 
     private companion object {
         const val TAG = "ClerkAuthManager"
+        const val KEY_LOCAL_SIGN_OUT = "local_signed_out"
+        const val KEY_VERIFIED_LEGACY = "verified_legacy_session"
         const val KEY_DEMO_MODE = "demo_mode"
         const val KEY_LAST_PAIR_ERROR = "last_pair_error"
         const val DEMO_USER_ID = "user_demo_mobile"

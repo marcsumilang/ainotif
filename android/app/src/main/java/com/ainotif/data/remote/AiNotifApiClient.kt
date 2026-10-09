@@ -35,6 +35,15 @@ class AiNotifApiClient(
         }
     }
 
+    suspend fun fetchSessionIdentity(authToken: String): Result<String> = runCatching {
+        val response = client.get("$baseUrl/api/session") {
+            header("Authorization", "Bearer $authToken")
+        }
+        check(response.status.isSuccess()) { "Session verification failed; update the backend and pair again" }
+        response.body<Map<String, String>>()["userId"]?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("Server did not return a verified session owner")
+    }
+
     suspend fun processNotification(
         request: ProcessNotificationRequest,
         authToken: String
@@ -48,6 +57,15 @@ class AiNotifApiClient(
             response.body<ProcessNotificationResponse>()
         } else {
             throw Exception("Server returned error: ${response.status.value}")
+        }
+    }
+
+    suspend fun checkClassificationConfiguration(): Result<Boolean?> = runCatching {
+        val response = client.get("$baseUrl/health")
+        if (response.status.isSuccess()) {
+            response.body<BackendHealthResponse>().classificationConfigured
+        } else {
+            throw Exception("Health check returned error: ${response.status.value}")
         }
     }
 

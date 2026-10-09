@@ -15,6 +15,8 @@ class NotificationActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == ACTION_DISMISS_ALERT) {
             val alertId = intent.getStringExtra(EXTRA_ALERT_ID) ?: return
+            val repository = AiNotifApplication.instance.repository
+            if (intent.getStringExtra(EXTRA_PROFILE_ACTIVATION) != repository.activationId) return
             val notifId = intent.getIntExtra(EXTRA_NOTIF_ID, -1)
 
             if (notifId != -1) {
@@ -26,7 +28,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
             val pending = goAsync()
             CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
                 try {
-                    AiNotifApplication.instance.repository.dismissAlert(alertId)
+                    repository.dismissAlert(alertId)
                 } finally {
                     pending.finish()
                 }
@@ -36,6 +38,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
 
     companion object {
         const val ACTION_DISMISS_ALERT = "com.ainotif.action.DISMISS_ALERT"
+        const val EXTRA_PROFILE_ACTIVATION = "extra_profile_activation"
         const val EXTRA_ALERT_ID = "extra_alert_id"
         const val EXTRA_NOTIF_ID = "extra_notif_id"
     }

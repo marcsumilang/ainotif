@@ -47,6 +47,7 @@ fun StatsScreen(
     val transactions by repository.transactionsFlow.collectAsState(initial = emptyList())
     val alerts by repository.activeAlertsFlow.collectAsState(initial = emptyList())
     val baseCurrency by repository.preferencesManager.baseCurrency.collectAsState()
+    val isOfflineOnly by repository.preferencesManager.isOfflineOnly.collectAsState()
 
     var selectedPeriod by remember { mutableStateOf("30D") } // 7D, 30D, 90D, YTD, ALL
     var isRefreshing by remember { mutableStateOf(false) }
@@ -117,6 +118,7 @@ fun StatsScreen(
                 },
                 actions = {
                     IconButton(
+                        enabled = !isOfflineOnly,
                         onClick = {
                             coroutineScope.launch {
                                 isRefreshing = true

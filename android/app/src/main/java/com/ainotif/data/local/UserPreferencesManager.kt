@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 class UserPreferencesManager(context: Context) {
+    private val appContext = context.applicationContext
+    private var activeProfileId: String? = null
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
@@ -134,9 +136,19 @@ class UserPreferencesManager(context: Context) {
         _isDeveloperModeUnlocked.value = unlocked
     }
 
-    fun setLastSyncTime(time: Long) {
-        prefs.edit().putLong(KEY_LAST_SYNC_TIME, time).apply()
-        _lastSyncTime.value = time
+    private fun syncPrefs(profileId: String?): SharedPreferences = if (profileId == null) prefs else
+        appContext.getSharedPreferences("ainotif_sync_${LocalDataProfile.fromOwnerId(profileId).databaseName}", Context.MODE_PRIVATE)
+
+    @Synchronized
+    fun activateProfile(profileId: String?) {
+        activeProfileId = profileId
+        _lastSyncTime.value = syncPrefs(profileId).getLong(KEY_LAST_SYNC_TIME, 0L)
+    }
+
+    @Synchronized
+    fun setLastSyncTime(time: Long, profileId: String?) {
+        syncPrefs(profileId).edit().putLong(KEY_LAST_SYNC_TIME, time).apply()
+        if (activeProfileId == profileId) _lastSyncTime.value = time
     }
 
     fun setBackendUrl(url: String) {

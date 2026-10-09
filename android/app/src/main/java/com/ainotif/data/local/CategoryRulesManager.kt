@@ -5,9 +5,12 @@ import android.content.SharedPreferences
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-class CategoryRulesManager(context: Context) {
+class CategoryRulesManager(context: Context, profileId: String? = null) {
 
-    private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val prefs: SharedPreferences = context.getSharedPreferences(
+        if (profileId == null) PREFS_NAME else "${PREFS_NAME}_${LocalDataProfile.fromOwnerId(profileId).databaseName}",
+        Context.MODE_PRIVATE
+    )
     private val json = Json { ignoreUnknownKeys = true }
 
     companion object {

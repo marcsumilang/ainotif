@@ -43,10 +43,10 @@ export const PLAN_LIMITS: Record<PlanType, PlanLimits> = {
     canBulkEdit: true,
     maxSimulations: Infinity,
     features: [
-      "Unlimited AI notification processing",
+      "Unlimited notification history & sync (AI subject to provider availability)",
       "Unlimited transaction history & analytics",
       "Deep Phishing Cues & Scam Radar heuristics",
-      "Unlimited interactive simulator tests",
+      "Unlimited simulator runs (AI subject to provider availability)",
       "1-Click CSV & JSON transaction data export",
       "Power bulk categorization & mass cleanup",
       "Real-time SSE live security guardian",

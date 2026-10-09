@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getTransactions, deleteTransaction, saveTransaction, updateTransaction, bulkDeleteTransactions, bulkUpdateCategory, getUserPlan } from "@/lib/db";
 import { eventBus } from "@/lib/events";
 import { getAuthenticatedUser } from "@/lib/auth";
-import { CURRENCIES, CATEGORIES } from "../../../../../backend/src/ai/classifier";
+import { CURRENCIES, CATEGORIES, notificationRecordId } from "../../../../../backend/src/ai/classifier";
 import { z } from "zod";
 
 function clampLimit(raw: string | null, fallback: number, max: number): number {
@@ -21,17 +21,35 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const parsedLimit = clampLimit(searchParams.get("limit"), 100, 200);
+  const beforeTimestamp = searchParams.get("beforeTimestamp");
+  const beforeId = searchParams.get("beforeId");
+  if (Boolean(beforeTimestamp) !== Boolean(beforeId)) {
+    return NextResponse.json({ error: "Invalid transaction cursor" }, { status: 400 });
+  }
+  if (beforeId && !z.string().uuid().safeParse(beforeId).success) {
+    return NextResponse.json({ error: "Invalid transaction cursor" }, { status: 400 });
+  }
+  const beforeDate = beforeTimestamp ? new Date(beforeTimestamp) : undefined;
+  if (beforeDate && Number.isNaN(beforeDate.getTime())) {
+    return NextResponse.json({ error: "Invalid transaction cursor" }, { status: 400 });
+  }
 
   const userPlanInfo = await getUserPlan(userId);
   const isPro = userPlanInfo.plan === "pro";
   const effectiveLimit = isPro ? parsedLimit : Math.min(parsedLimit, 15);
 
-  const transactions = await getTransactions(userId, effectiveLimit);
+  const rows = await getTransactions(userId, effectiveLimit + 1,
+    beforeDate && beforeId ? { timestamp: beforeDate, id: beforeId } : undefined);
+  const hasMore = isPro && rows.length > effectiveLimit;
+  const transactions = rows.slice(0, effectiveLimit);
+  const last = transactions[transactions.length - 1];
   return NextResponse.json({
     transactions,
     plan: userPlanInfo.plan,
     isCapped: !isPro,
     viewLimit: isPro ? null : 15,
+    hasMore,
+    nextCursor: hasMore && last ? { timestamp: new Date(last.timestamp).toISOString(), id: last.id } : null,
   });
 }
 
@@ -146,6 +164,7 @@ export async function PATCH(req: NextRequest) {
 
 const CreateTransactionSchema = z.object({
   id: z.string().uuid().optional(),
+  sourceEventId: z.string().trim().min(1).max(255).optional(),
   amount: z.number().positive().finite(),
   currency: z.enum(CURRENCIES).default("USD"),
   merchant: z.string().min(1).max(255),
@@ -174,10 +193,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Forbidden: Cannot create for another user" }, { status: 403 });
     }
 
-    const { id, amount, currency, merchant, category, type, rawNotification, sourcePackage, timestamp } = parsed.data;
+    const { id, sourceEventId, amount, currency, merchant, category, type, rawNotification, sourcePackage, timestamp } = parsed.data;
 
     const created = await saveTransaction({
-      id,
+      id: id ?? notificationRecordId(userId, sourceEventId),
       userId,
       amount,
       currency,
@@ -186,6 +205,7 @@ export async function POST(req: NextRequest) {
       type,
       rawNotification,
       sourcePackage,
+      sourceEventId,
       timestamp: timestamp ? new Date(timestamp) : new Date(),
     });
 

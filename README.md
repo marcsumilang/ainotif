@@ -1,6 +1,6 @@
 # NotifAi 🛡️📱
 
-**NotifAi** is a modern, privacy-first Android application, Wise-inspired web platform, and typesafe AI service that intercepts banking, SMS, and financial notifications, instantly drops sensitive OTPs/credentials on-device, forwards financial updates to a structured AI engine (TypeSafe Jev / Zod), detects phishing/scam attempts, categorizes expenses, and syncs data to an offline-first Room database with Clerk user authentication and Neon PostgreSQL storage. Fully compliant with Google Play Developer Policies and Account Deletion mandates.
+**NotifAi** is a modern Android application, web platform, and AI service that captures notifications from user-enabled apps, drops sensitive OTPs/credentials on-device, classifies other notifications through OpenRouter's free-model router, flags possible phishing, and keeps an owner-scoped cloud history alongside an offline-first Room database with Clerk authentication and Neon PostgreSQL storage.
 
 ---
 
@@ -25,9 +25,9 @@
                         │             Backend Service (TypeScript / Hono)        │
                         │                                                        │
                         │  1. Verify Clerk JWT                                   │
-                        │  2. Typesafe AI Engine (TypeSafe Jev / Zod)  │
-                        │     - Classifies: Transaction vs. Phishing/Scam        │
-                        │     - Extracts: Amount, Currency, Merchant, Category   │
+                        │  2. OpenRouter free-model classifier + Zod policy     │
+                        │     - Classifies all non-sensitive captured notices   │
+                        │     - Proposes transaction fields for human review    │
                         │  3. Drizzle ORM + Connection Pooling                   │
                         └───────────────────────────┬────────────────────────────┘
                                                     │
@@ -69,11 +69,11 @@ ainotif/
 │   ├── settings.gradle.kts
 │   └── gradlew
 │
-└── backend/                         # Typesafe Backend API (TypeScript / Hono)
+└── backend/                         # Notification API (TypeScript / Hono)
     ├── src/
     │   ├── db/                      # Neon DB connection & Drizzle ORM schema
     │   ├── auth/                    # Clerk JWT verification middleware
-    │   ├── ai/                      # Shared Jev judgment pipeline and review policy
+    │   ├── ai/                      # Shared OpenRouter classification and review policy
     │   ├── routes/                  # /process-notification, /transactions, /alerts, /stats
     │   └── index.ts                 # Hono server setup
     ├── test/                        # Classifier unit & API integration test suites
@@ -97,7 +97,7 @@ ainotif/
 
 ## Getting Started
 
-See [Jev setup, migration, evaluation, and tester checklist](docs/jev-migration.md) before enabling notification processing with Neon.
+See [notification capture, history, and classification](docs/openrouter-notification-history.md) before enabling notification processing with Neon.
 
 ### 1. Web Dashboard (Next.js & Cloudflare Wrangler)
 
@@ -135,7 +135,7 @@ pnpm install
 
 # Configure environment variables
 cp .env.example .env
-# Edit .env to add your TYPESAFE_API_KEY, DATABASE_URL, and CLERK keys
+# Edit .env to add your OPENROUTER_API_KEY, DATABASE_URL, and CLERK keys
 # (By default, DEV_MOCK_AUTH=true allows instant testing without live keys)
 
 # Run integration tests
@@ -150,21 +150,14 @@ pnpm dev
 
 ### 3. Android App Setup
 
-Before building the native app, enable **Native API** in Clerk and register the Android package `com.ainotif` under Native applications. Provide Clerk's publishable key to Gradle as `CLERK_PUBLISHABLE_KEY` (environment variable or Gradle property). The web mobile-pairing page issues a two-minute, single-use sign-in ticket; the native Clerk SDK redeems it and refreshes the Android session tokens. The web app and backend must have their server-side `CLERK_SECRET_KEY` configured.
+Before building the native app, enable **Native API** in Clerk and register the Android package `com.ainotif` under Native applications. The root APK build commands use `CLERK_PUBLISHABLE_KEY` from the environment or Gradle properties first, then fall back to the public key in `web/.env.local`. The root build stops instead of silently producing an APK with sign-in disabled if no key is available. The web mobile-pairing page issues a two-minute, single-use sign-in ticket; the native Clerk SDK redeems it and refreshes the Android session tokens. The web app and backend must have their server-side `CLERK_SECRET_KEY` configured separately.
 
 ```bash
-cd android
-
-# Build commands need CLERK_PUBLISHABLE_KEY configured in the environment or Gradle properties.
-# Run unit tests (verifies OTP dropping, financial regex matching)
-./gradlew testDebugUnitTest
-
-# Assemble debug APK
-./gradlew assembleDebug
-
-# Install on connected emulator or device
-./gradlew installDebug
+# From the project root; includes the Clerk publishable key in the APK.
+npm run build:apk
 ```
+
+Direct Gradle builds still need `CLERK_PUBLISHABLE_KEY` in the environment or Gradle properties before running `./gradlew assembleDebug` or `./gradlew assembleRelease` from `android/`.
 
 #### Fast ADB Install via NPM:
 From the project root (or inside `web/` / `backend/`), you can directly install the newest APK:
@@ -195,12 +188,14 @@ npm run build-and-install
    - High-performance regular expressions running on the device instantly discard any message containing one-time passwords, 2FA codes, or password reset tokens.
    - These messages are **never sent over the network** or logged to cloud servers.
 
-3. **Typesafe AI Transaction & Phishing Detection**:
-   - TypeSafe Jev batches typed judgments, selects pre-parsed amount and merchant spans, and validates financial fields before saving. Uncertain notifications and fallback results are retained for review; automatic hiding is disabled until a labeled evaluation supports enabling it.
-   - Evaluates urgency, sender legitimacy, suspicious short links, and phishing lures with automated risk scores (`0-100`).
+3. **OpenRouter Notification Classification**:
+   - Notifications from user-enabled apps are classified and saved to owner-scoped history. OTPs, passwords, and reset credentials are filtered locally before cloud processing.
+   - The `openrouter/free` router is constrained to providers with zero data retention and no data collection. Free-model transaction suggestions stay in review and never enter the ledger automatically; automatic hiding remains disabled.
 
 4. **Zero-Configuration Offline / Demo Mode**:
-   - Web dashboard, backend, and mobile app include seamless mock/demo fallbacks, so developers can test the full end-to-end pipeline before configuring live Neon DB or Clerk keys.
+   - Web dashboard, backend, and mobile app include mock/demo options for local development before configuring Neon DB, Clerk, and OpenRouter keys.
+
+See [notification capture, history, and classification](docs/openrouter-notification-history.md) for server setup and tester steps.
 
 ---
 
@@ -230,4 +225,3 @@ When filling out the Google Play Console Data Safety questionnaire, use these de
 - **Terms of Service**: `/terms`
 - **Help & Support Desk**: `/support`
 - **Security & Data Safety Whitepaper**: `/security`
-
