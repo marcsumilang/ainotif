@@ -57,6 +57,7 @@ fun SettingsScreen(
     appFilterManager: AppFilterManager
 ) {
     val context = LocalContext.current
+    val pinServiceTargets = BuildConfig.BUILD_TYPE == "acceptance"
     val coroutineScope = rememberCoroutineScope()
     val authState by authManager.userState.collectAsState()
     val logs by repository.logsFlow.collectAsState(initial = emptyList())
@@ -1130,7 +1131,7 @@ fun SettingsScreen(
                             ) {
                                 Button(
                                     onClick = {
-                                        authManager.launchClerkSignIn(context, webAuthUrlInput, mode = "signin")
+                                        authManager.launchClerkSignIn(context, if (pinServiceTargets) webUrl else webAuthUrlInput, mode = "signin")
                                     },
                                     enabled = BuildConfig.CLERK_PUBLISHABLE_KEY.isNotBlank(),
                                     modifier = Modifier.weight(1.1f),
@@ -1147,7 +1148,7 @@ fun SettingsScreen(
 
                                 OutlinedButton(
                                     onClick = {
-                                        authManager.launchClerkSignUp(context, webAuthUrlInput)
+                                        authManager.launchClerkSignUp(context, if (pinServiceTargets) webUrl else webAuthUrlInput)
                                     },
                                     enabled = BuildConfig.CLERK_PUBLISHABLE_KEY.isNotBlank(),
                                     modifier = Modifier.weight(1.1f),
@@ -1291,6 +1292,7 @@ fun SettingsScreen(
                             OutlinedTextField(
                                 value = customUrlInput,
                                 onValueChange = { customUrlInput = it },
+                                enabled = !pinServiceTargets,
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -1310,6 +1312,7 @@ fun SettingsScreen(
                                             Toast.makeText(context, "Base URL updated", Toast.LENGTH_SHORT).show()
                                         }
                                     },
+                                    enabled = !pinServiceTargets,
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
                                     Text("Save URL")
@@ -1343,6 +1346,7 @@ fun SettingsScreen(
                             OutlinedTextField(
                                 value = webAuthUrlInput,
                                 onValueChange = { webAuthUrlInput = it },
+                                enabled = !pinServiceTargets,
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -1353,6 +1357,7 @@ fun SettingsScreen(
                                         prefs.setWebUrl(webAuthUrlInput)
                                         Toast.makeText(context, "Web Auth URL updated", Toast.LENGTH_SHORT).show()
                                     },
+                                    enabled = !pinServiceTargets,
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
                                     Text("Save URL")
@@ -1934,7 +1939,7 @@ fun SettingsScreen(
                         value = manualInputText,
                         onValueChange = { manualInputText = it },
                         label = { Text("Pairing Link or Ticket") },
-                        placeholder = { Text("notifai://oauth/callback?ticket=...") },
+                        placeholder = { Text("${BuildConfig.AUTH_SCHEME}://oauth/callback?ticket=...") },
                         modifier = Modifier.fillMaxWidth(),
                         maxLines = 3
                     )
@@ -1957,6 +1962,7 @@ fun SettingsScreen(
                     OutlinedTextField(
                         value = webAuthUrlInput,
                         onValueChange = { webAuthUrlInput = it },
+                        enabled = !pinServiceTargets,
                         label = { Text("Web Auth Base URL") },
                         placeholder = { Text(BuildConfig.WEB_BASE_URL) },
                         modifier = Modifier.fillMaxWidth(),
@@ -1976,7 +1982,8 @@ fun SettingsScreen(
                             return@Button
                         }
 
-                        val parsedUri = if (input.startsWith("ainotif://") || input.startsWith("notifai://")) {
+                        val pairingSchemes = setOf("ainotif", "notifai", BuildConfig.AUTH_SCHEME, BuildConfig.LEGACY_AUTH_SCHEME)
+                        val parsedUri = if (input.substringBefore("://") in pairingSchemes) {
                             runCatching { Uri.parse(input) }.getOrNull()
                         } else null
                         val ticket = parsedUri?.getQueryParameter("ticket") ?: input.takeIf { parsedUri == null }

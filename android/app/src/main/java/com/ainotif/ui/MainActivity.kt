@@ -25,6 +25,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.ainotif.AiNotifApplication
+import com.ainotif.BuildConfig
 import com.ainotif.auth.BiometricAuthManager
 import com.ainotif.ui.screens.AlertsScreen
 import com.ainotif.ui.screens.FeedScreen
@@ -263,7 +264,7 @@ class MainActivity : FragmentActivity() {
 
     private fun handleAuthIntent(intent: Intent?) {
         val uri = intent?.data ?: return
-        val isAuthScheme = uri.scheme == "ainotif" || uri.scheme == "notifai"
+        val isAuthScheme = uri.scheme == BuildConfig.AUTH_SCHEME || uri.scheme == BuildConfig.LEGACY_AUTH_SCHEME
         if (isAuthScheme && uri.host == "oauth" && uri.path?.startsWith("/callback") == true) {
             val ticket = uri.getQueryParameter("ticket")
             val token = uri.getQueryParameter("token")

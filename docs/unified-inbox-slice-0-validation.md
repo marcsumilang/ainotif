@@ -49,6 +49,8 @@ Use synthetic content and two separate test accounts from the existing environme
 
 Slice 0 source implementation and local automated checks are ready for review. Its device/account-switch acceptance gate remains open. Do not call Slice 0 fully accepted or enable the broader capture/connectors based on these unit/build checks.
 
+2026-10-10 release preparation adds an isolated acceptance build, explicit service-target guards, and compiled Android instrumentation fixtures for the actual Room migration and service-target isolation. These fixtures have not run on a device. See [release readiness and tester commands](unified-inbox-slice-0-release-readiness.md) for current evidence, the reviewed database-copy procedure, and remaining setup/product decisions.
+
 Before deployment: inventory actual database/Room versions, validate the existing `0001_notification_analyses.sql` then `0002_notification_history_idempotency.sql` on a reviewed non-production copy, and deploy backend/web session support before shipping Android legacy verification. No live migrations or deployments ran in this task. No release APK or release-device validation ran.
 
 After account/device acceptance, Slice 1 adds the dedicated categorized Android inbox, source picker, rules, overrides, filters and explicitly confirmed reminders. Slice 2 adds ephemeral local Codes. Provider requirements and pending distribution/retention choices are in [unified-inbox-provider-feasibility.md](unified-inbox-provider-feasibility.md); full baseline detail is in [unified-inbox-baseline-results.md](unified-inbox-baseline-results.md).

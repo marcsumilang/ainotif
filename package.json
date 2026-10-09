@@ -11,6 +11,8 @@
     "adb:launch": "node scripts/adb-install.js --launch-only",
     "build:apk": "node scripts/build-android.js assembleDebug",
     "build:apk:release": "node scripts/build-android.js assembleRelease",
+    "build:apk:acceptance": "node scripts/build-android-acceptance.js",
+    "test:acceptance-config": "node scripts/test-android-acceptance-config.js",
     "build-and-install": "npm run build:apk && npm run adb-install",
     "dev:backend": "cd backend && pnpm dev",
     "dev:web": "cd web && pnpm dev"

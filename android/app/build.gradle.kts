@@ -1,3 +1,5 @@
+import java.net.URI
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -12,9 +14,38 @@ val clerkPublishableKey = providers.gradleProperty("CLERK_PUBLISHABLE_KEY")
     .orElse(providers.environmentVariable("CLERK_PUBLISHABLE_KEY"))
     .getOrElse("")
 
+// Acceptance never inherits the deployed URLs or the normal build's Clerk key.
+val acceptanceBackendUrl = providers.environmentVariable("ACCEPTANCE_BACKEND_BASE_URL").getOrElse("")
+val acceptanceWebUrl = providers.environmentVariable("ACCEPTANCE_WEB_BASE_URL").getOrElse("")
+val acceptanceClerkKey = providers.environmentVariable("ACCEPTANCE_CLERK_PUBLISHABLE_KEY").getOrElse("")
+fun buildConfigString(value: String): String = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r") + "\""
+
+val validateAcceptanceConfig = tasks.register("validateAcceptanceConfig") {
+    doLast {
+        check(System.getenv("ACCEPTANCE_TARGET_REVIEWED") == "true") {
+            "Review the non-production services, accounts and database copy, then set ACCEPTANCE_TARGET_REVIEWED=true."
+        }
+        val productionHosts = setOf("ainotif-backend.marcsumilang.workers.dev", "ainotif-web.marcsumilang.workers.dev")
+        for ((label, value) in listOf("backend" to acceptanceBackendUrl, "web" to acceptanceWebUrl)) {
+            val uri = runCatching { URI(value) }.getOrNull()
+            check(uri != null && uri.scheme.equals("https", ignoreCase = true) &&
+                !uri.host.isNullOrBlank() && uri.host.lowercase().removeSuffix(".") !in productionHosts &&
+                uri.rawUserInfo == null &&
+                uri.rawQuery == null && uri.rawFragment == null &&
+                (uri.rawPath.isNullOrEmpty() || uri.rawPath == "/")) {
+                "Acceptance $label must be an explicit reviewed HTTPS origin without credentials; deployed service hosts are prohibited."
+            }
+        }
+        check(Regex("pk_test_[A-Za-z0-9+/=_-]+").matches(acceptanceClerkKey)) {
+            "Acceptance requires its own Clerk test-instance publishable key."
+        }
+    }
+}
+
 android {
     namespace = "com.ainotif"
     compileSdk = 36
+    testBuildType = "acceptance"
 
     defaultConfig {
         applicationId = "com.ainotif"
@@ -26,7 +57,12 @@ android {
         buildConfigField("String", "BACKEND_BASE_URL", "\"https://ainotif-backend.marcsumilang.workers.dev\"")
         buildConfigField("String", "WEB_BASE_URL", "\"https://ainotif-web.marcsumilang.workers.dev\"")
         buildConfigField("String", "CLERK_PUBLISHABLE_KEY", "\"$clerkPublishableKey\"")
+        buildConfigField("String", "AUTH_SCHEME", "\"notifai\"")
+        buildConfigField("String", "LEGACY_AUTH_SCHEME", "\"ainotif\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        manifestPlaceholders["sentryDsn"] = "https://de13df192e33461c4babda7eec64cd57@o4504088165220352.ingest.us.sentry.io/4512185643696128"
+        manifestPlaceholders["authScheme"] = "notifai"
+        manifestPlaceholders["legacyAuthScheme"] = "ainotif"
     }
 
     buildTypes {
@@ -39,6 +75,21 @@ android {
         }
         debug {
             isMinifyEnabled = false
+        }
+        create("acceptance") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".acceptance"
+            versionNameSuffix = "-acceptance"
+            matchingFallbacks += listOf("debug")
+            buildConfigField("String", "BACKEND_BASE_URL", buildConfigString(acceptanceBackendUrl.trimEnd('/')))
+            buildConfigField("String", "WEB_BASE_URL", buildConfigString(acceptanceWebUrl.trimEnd('/')))
+            buildConfigField("String", "CLERK_PUBLISHABLE_KEY", buildConfigString(acceptanceClerkKey))
+            buildConfigField("String", "AUTH_SCHEME", "\"notifai-acceptance\"")
+            buildConfigField("String", "LEGACY_AUTH_SCHEME", "\"ainotif-acceptance\"")
+            resValue("string", "app_name", "NotifAi Acceptance")
+            manifestPlaceholders["sentryDsn"] = ""
+            manifestPlaceholders["authScheme"] = "notifai-acceptance"
+            manifestPlaceholders["legacyAuthScheme"] = "ainotif-acceptance"
         }
     }
 
@@ -63,6 +114,10 @@ android {
             excludes += "META-INF/versions/9/OSGI-INF/MANIFEST.MF"
         }
     }
+}
+
+tasks.configureEach {
+    if (name == "preAcceptanceBuild") dependsOn(validateAcceptanceConfig)
 }
 
 dependencies {

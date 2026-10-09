@@ -1,5 +1,6 @@
 package com.ainotif.data.remote
 
+import com.ainotif.BuildConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.engine.cio.CIO
@@ -18,8 +19,15 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
 class AiNotifApiClient(
-    var baseUrl: String = "https://ainotif-backend.marcsumilang.workers.dev"
+    baseUrl: String = BuildConfig.BACKEND_BASE_URL
 ) {
+    // Acceptance stays on the reviewed build target even if an old preference
+    // or developer control attempts to supply a different service URL.
+    var baseUrl: String = if (BuildConfig.BUILD_TYPE == "acceptance") BuildConfig.BACKEND_BASE_URL else baseUrl
+        set(value) {
+            field = if (BuildConfig.BUILD_TYPE == "acceptance") BuildConfig.BACKEND_BASE_URL else value
+        }
+
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
             json(Json {

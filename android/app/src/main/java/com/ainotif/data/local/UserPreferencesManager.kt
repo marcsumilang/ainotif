@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 class UserPreferencesManager(context: Context) {
+    private val pinServiceTargets = BuildConfig.BUILD_TYPE == "acceptance"
     private val appContext = context.applicationContext
     private var activeProfileId: String? = null
 
@@ -65,10 +66,10 @@ class UserPreferencesManager(context: Context) {
     private val _lastSyncTime = MutableStateFlow(prefs.getLong(KEY_LAST_SYNC_TIME, 0L))
     val lastSyncTime: StateFlow<Long> = _lastSyncTime.asStateFlow()
 
-    private val _backendUrl = MutableStateFlow(prefs.getString(KEY_BACKEND_URL, BuildConfig.BACKEND_BASE_URL) ?: BuildConfig.BACKEND_BASE_URL)
+    private val _backendUrl = MutableStateFlow(if (pinServiceTargets) BuildConfig.BACKEND_BASE_URL else prefs.getString(KEY_BACKEND_URL, BuildConfig.BACKEND_BASE_URL) ?: BuildConfig.BACKEND_BASE_URL)
     val backendUrl: StateFlow<String> = _backendUrl.asStateFlow()
 
-    private val _webUrl = MutableStateFlow(prefs.getString(KEY_WEB_URL, BuildConfig.WEB_BASE_URL) ?: BuildConfig.WEB_BASE_URL)
+    private val _webUrl = MutableStateFlow(if (pinServiceTargets) BuildConfig.WEB_BASE_URL else prefs.getString(KEY_WEB_URL, BuildConfig.WEB_BASE_URL) ?: BuildConfig.WEB_BASE_URL)
     val webUrl: StateFlow<String> = _webUrl.asStateFlow()
 
     fun setBaseCurrency(currency: String) {
@@ -152,8 +153,9 @@ class UserPreferencesManager(context: Context) {
     }
 
     fun setBackendUrl(url: String) {
-        prefs.edit().putString(KEY_BACKEND_URL, url).apply()
-        _backendUrl.value = url
+        val target = if (pinServiceTargets) BuildConfig.BACKEND_BASE_URL else url
+        prefs.edit().putString(KEY_BACKEND_URL, target).apply()
+        _backendUrl.value = target
     }
 
     fun resetBackendUrl() {
@@ -162,8 +164,9 @@ class UserPreferencesManager(context: Context) {
     }
 
     fun setWebUrl(url: String) {
-        prefs.edit().putString(KEY_WEB_URL, url).apply()
-        _webUrl.value = url
+        val target = if (pinServiceTargets) BuildConfig.WEB_BASE_URL else url
+        prefs.edit().putString(KEY_WEB_URL, target).apply()
+        _webUrl.value = target
     }
 
     fun resetWebUrl() {

@@ -29,7 +29,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun notificationLogDao(): NotificationLogDao
 
     companion object {
-        private val MIGRATION_2_3 = object : Migration(2, 3) {
+        internal val MIGRATION_2_3 = object : Migration(2, 3) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE transactions ADD COLUMN sourceEventId TEXT")
                 db.execSQL("ALTER TABLE suspicious_alerts ADD COLUMN sourceEventId TEXT")

@@ -61,7 +61,7 @@
                 <data
                     android:host="oauth"
                     android:pathPrefix="/callback"
-                    android:scheme="notifai" />
+                    android:scheme="${authScheme}" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -70,7 +70,7 @@
                 <data
                     android:host="oauth"
                     android:pathPrefix="/callback"
-                    android:scheme="ainotif" />
+                    android:scheme="${legacyAuthScheme}" />
             </intent-filter>
         </activity>
 
@@ -104,7 +104,7 @@
 
     
     <!-- Required: set your sentry.io project identifier (DSN) -->
-    <meta-data android:name="io.sentry.dsn" android:value="https://de13df192e33461c4babda7eec64cd57@o4504088165220352.ingest.us.sentry.io/4512185643696128" />
+    <meta-data android:name="io.sentry.dsn" android:value="${sentryDsn}" />
     <!-- Finance app: never collect PII, screenshots, or view hierarchies (may contain balances/OTPs) -->
     <meta-data android:name="io.sentry.send-default-pii" android:value="false" />
 
